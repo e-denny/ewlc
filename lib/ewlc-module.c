@@ -4,10 +4,23 @@
 /* Declare mandatory GPL symbol.  */
 int plugin_is_GPL_compatible;
 
-static emacs_value Fwm_start(emacs_env *env, int nargs, emacs_value args[], void *data)
+static emacs_value Fewlc_start(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
-  wm_start();
+  ewlc_start();
   return env->make_integer(env, 0);
+}
+
+static emacs_value Fewlc_display_dispatch(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+  int r;
+  r = ewlc_display_dispatch();
+  return env->make_integer(env, r);
+}
+
+static emacs_value Fewlc_cleanup(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+  int r = ewlc_cleanup();
+  return env->make_integer(env, r);
 }
 
 /* Bind NAME to FUN.  */
@@ -36,9 +49,15 @@ int emacs_module_init(struct emacs_runtime *ert)
   emacs_env *env = ert->get_environment(ert);
   emacs_value func;
 
-  func = env->make_function(env, 0, 0, Fwm_start, "Start the compositor", NULL);
+  func = env->make_function(env, 0, 0, Fewlc_start, "Start the compositor.", NULL);
+  bind_function(env, "ewlc-start", func);
 
-  bind_function(env, "wm-start", func);
+  func = env->make_function(env, 0, 0, Fewlc_display_dispatch, "Flush the compositor events.", NULL);
+  bind_function(env, "ewlc-display-dispatch", func);
+
+  func = env->make_function(env, 0, 0, Fewlc_cleanup, "Cleanup after exit.", NULL);
+  bind_function(env, "ewlc-cleanup", func);
+
   provide(env, "ewlc");
 
   /* loaded successfully */

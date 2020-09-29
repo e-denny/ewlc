@@ -12,6 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
+#include <wayland-client.h>
 #include <wlr/backend.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
@@ -50,7 +51,6 @@
 #define CLEANMASK(mask)         (mask & ~WLR_MODIFIER_CAPS)
 #define LENGTH(X)               (sizeof X / sizeof X[0])
 #define END(A)                  ((A) + LENGTH(A))
-#define TAGMASK                 ((1 << LENGTH(tags)) - 1)
 
 /* enums */
 enum { CUR_NORMAL, CUR_MOVE, CUR_RESIZE }; /* cursor */
@@ -72,10 +72,8 @@ struct ewlc_output {
         struct wl_listener destroy;
         struct wlr_box m;      /* output area */
         struct wlr_box w;      /* window area */
-        unsigned int seltags;
-        unsigned int tagset[2];
-        double mfact;
-        int nmaster;
+        double master_ratio;
+        int num_master;
 };
 
 struct ewlc_client {
@@ -98,9 +96,8 @@ struct ewlc_client {
         struct wl_listener destroy;
         struct wlr_box geom;  /* layout-relative, includes border */
         struct ewlc_output *output;
-        int bw;
-        unsigned int tags;
-        int isfloating;
+        int border_width;
+        int is_floating;
         uint32_t resize; /* configure serial of a pending resize */
 };
 
@@ -154,6 +151,8 @@ struct ewlc_server {
         struct wl_list focus_stack;  /* focus order */
         struct wl_list independents;
         struct wl_list stack;   /* stacking z-order */
+
+        pid_t startup_pid;
 };
 
 typedef union {
@@ -191,22 +190,13 @@ struct ewlc_keyboard {
         struct wl_listener destroy;
 };
 
-
-typedef struct {
+struct ewlc_output_rule {
         const char *name;
-        float mfact;
-        int nmaster;
+        float master_ratio;
+        int num_master;
         float scale;
         enum wl_output_transform rr;
-} MonitorRule;
-
-typedef struct {
-        const char *id;
-        const char *title;
-        unsigned int tags;
-        int isfloating;
-        int output;
-} Rule;
+};
 
 /* Used to move all of the data necessary to render a surface from the top-level
  * frame handler to the per-surface render function. */
@@ -218,10 +208,8 @@ struct render_data {
 
 /* function declarations */
 static void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox);
-static void apply_rules(struct ewlc_client *c);
-static void arrange(struct ewlc_output *m);
+static void arrange(struct ewlc_output *o);
 static void chvt(const Arg *arg);
-static void cleanup(void);
 static void cleanup_keyboard(struct wl_listener *listener, void *data);
 static void cleanup_output(struct wl_listener *listener, void *data);
 static void commit_notify(struct wl_listener *listener, void *data);
@@ -234,8 +222,8 @@ static void destroy_xdeco(struct wl_listener *listener, void *data);
 static struct ewlc_output *get_next_output(int dir);
 static void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift);
 static void focus_output(const Arg *arg);
-static void focus_stack(const Arg *arg);
-static struct ewlc_client *focus_top(struct ewlc_output *m);
+static void focus_next_client(const Arg *arg);
+static struct ewlc_client *focus_top(struct ewlc_output *o);
 static void get_xdeco_mode(struct wl_listener *listener, void *data);
 static void incn_master(const Arg *arg);
 static int keybinding(uint32_t mods, xkb_keysym_t sym);
@@ -249,30 +237,25 @@ static void pointer_focus(struct ewlc_client *c, struct wlr_surface *surface,
                           double sx, double sy, uint32_t time);
 static void quit(const Arg *arg);
 static void render(struct wlr_surface *surface, int sx, int sy, void *data);
-static void render_clients(struct ewlc_output *m, struct timespec *now);
+static void render_clients(struct ewlc_output *o, struct timespec *now);
 static void render_output(struct wl_listener *listener, void *data);
 static void resize(struct ewlc_client *c, int x, int y, int w, int h, int interact);
-static void run(char *startup_cmd);
 static void scale_box(struct wlr_box *box, float scale);
 static struct ewlc_client *get_active_client(void);
 static void set_floating(struct ewlc_client *c, int floating);
-static void set_mfact(const Arg *arg);
-static void set_output(struct ewlc_client *c, struct ewlc_output *m, unsigned int newtags);
-static void setup(void);
+static void set_master_ratio(const Arg *arg);
+static void set_output(struct ewlc_client *c, struct ewlc_output *o);
 static void sigchld(int unused);
 static void spawn(const Arg *arg);
-static void tag(const Arg *arg);
-static void tag_output(const Arg *arg);
-static void tile(struct ewlc_output *m);
+static void tile(struct ewlc_output *o);
 static void toggle_floating(const Arg *arg);
-static void toggle_tag(const Arg *arg);
-static void toggle_view(const Arg *arg);
 static void unmap_notify(struct wl_listener *listener, void *data);
 static void view(const Arg *arg);
 static struct ewlc_client *get_client_at_point(double x, double y);
 static struct ewlc_output *get_output_at_point(double x, double y);
 static void zoom(const Arg *arg);
 static bool is_visible_on(struct ewlc_client *c, struct ewlc_output *o);
+static void apply_title(struct ewlc_client *c);
 
 static void cursor_axis_notify(struct wl_listener *listener, void *data);
 static void cursor_button_notify(struct wl_listener *listener, void *data);
@@ -287,7 +270,7 @@ static void seat_request_set_primary_selection_notify(struct wl_listener *listen
 static void backend_new_input_notify(struct wl_listener *listener, void *data);
 static void backend_new_output_notify(struct wl_listener *listener, void *data);
 
-static wlr_surface *get_surface(ewlc_client *c);
+static struct wlr_surface *get_surface(struct ewlc_client *c);
 
 #ifdef XWAYLAND
 static void activate_x11(struct wl_listener *listener, void *data);
@@ -299,7 +282,7 @@ static void xwayland_ready_notify(struct wl_listener *listener, void *data);
 static struct ewlc_client *get_independent_at_point(double x, double y);
 #endif
 
-/* variables */
+/* global variables */
 static const char broken[] = "broken";
 
 struct ewlc_server server;
@@ -317,25 +300,14 @@ static const float root_color[]      = {0.3, 0.3, 0.3, 1.0};
 static const float border_color[]    = {0.5, 0.5, 0.5, 1.0};
 static const float focus_color[]     = {1.0, 0.0, 0.0, 1.0};
 
-/* tagging */
-static const char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
-
-static const Rule rules[] = {
-        /* app_id     title       tags mask     isfloating   output */
-        /* examples:
-        { "Gimp",     NULL,       0,            1,           -1 },
-        { "firefox",  NULL,       1 << 8,       0,           -1 },
-        */
-};
-
 /* outputs */
-static const MonitorRule output_rules[] = {
-        /* name       mfact nmaster scale  rotate/reflect */
+static const struct ewlc_output_rule output_rules[] = {
+        /* name       master_ratio num_master scale  rotate/reflect */
         /* example of a HiDPI laptop monitor:
         { "eDP-1",    0.5,  1,      2,    WL_OUTPUT_TRANSFORM_NORMAL },
         */
         /* defaults */
-        { NULL,       0.55, 1,      1,    WL_OUTPUT_TRANSFORM_NORMAL },
+        { NULL,       0.5, 1,      1,    WL_OUTPUT_TRANSFORM_NORMAL },
 };
 
 /* keyboard */
@@ -349,11 +321,6 @@ static const int repeat_rate = 25;
 static const int repeat_delay = 600;
 
 #define MODKEY WLR_MODIFIER_ALT
-#define TAGKEYS(KEY,SKEY,TAG) \
-        { MODKEY,                    KEY,            view,            {.ui = 1 << TAG} }, \
-        { MODKEY|WLR_MODIFIER_CTRL,  KEY,            toggle_view,      {.ui = 1 << TAG} }, \
-        { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           tag,             {.ui = 1 << TAG} }, \
-        { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,toggle_tag, {.ui = 1 << TAG} }
 
 /* helper for spawning shell commands in the pre dwm-5.0 fashion */
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
@@ -365,31 +332,19 @@ static const Key keys[] = {
         /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
         /* modifier                  key                 function        argument */
         { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Return,     spawn,          {.v = termcmd} },
-        { MODKEY,                    XKB_KEY_j,          focus_stack,     {.i = +1} },
-        { MODKEY,                    XKB_KEY_k,          focus_stack,     {.i = -1} },
+        { MODKEY,                    XKB_KEY_j,          focus_next_client,     {.i = +1} },
+        { MODKEY,                    XKB_KEY_k,          focus_next_client,     {.i = -1} },
         { MODKEY,                    XKB_KEY_i,          incn_master,     {.i = +1} },
         { MODKEY,                    XKB_KEY_d,          incn_master,     {.i = -1} },
-        { MODKEY,                    XKB_KEY_h,          set_mfact,       {.f = -0.05} },
-        { MODKEY,                    XKB_KEY_l,          set_mfact,       {.f = +0.05} },
+        { MODKEY,                    XKB_KEY_h,          set_master_ratio,       {.f = -0.05} },
+        { MODKEY,                    XKB_KEY_l,          set_master_ratio,       {.f = +0.05} },
         { MODKEY,                    XKB_KEY_Return,     zoom,           {0} },
         { MODKEY,                    XKB_KEY_Tab,        view,           {0} },
         { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,          kill_client,     {0} },
         { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      toggle_floating, {0} },
         { MODKEY,                    XKB_KEY_0,          view,           {.ui = ~0} },
-        { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_parenright, tag,            {.ui = ~0} },
         { MODKEY,                    XKB_KEY_comma,      focus_output,       {.i = -1} },
         { MODKEY,                    XKB_KEY_period,     focus_output,       {.i = +1} },
-        { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_less,       tag_output,         {.i = -1} },
-        { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_greater,    tag_output,         {.i = +1} },
-        TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
-        TAGKEYS(          XKB_KEY_2, XKB_KEY_at,                         1),
-        TAGKEYS(          XKB_KEY_3, XKB_KEY_numbersign,                 2),
-        TAGKEYS(          XKB_KEY_4, XKB_KEY_dollar,                     3),
-        TAGKEYS(          XKB_KEY_5, XKB_KEY_percent,                    4),
-        TAGKEYS(          XKB_KEY_6, XKB_KEY_caret,                      5),
-        TAGKEYS(          XKB_KEY_7, XKB_KEY_ampersand,                  6),
-        TAGKEYS(          XKB_KEY_8, XKB_KEY_asterisk,                   7),
-        TAGKEYS(          XKB_KEY_9, XKB_KEY_parenleft,                  8),
         { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Q,          quit,           {0} },
         { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_Terminate_Server, quit, {0} },
 #define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_XF86Switch_VT_##n, chvt, {.ui = (n)} }
@@ -403,26 +358,21 @@ static const Button buttons[] = {
         { MODKEY, BTN_RIGHT,  move_resize,     {.ui = CUR_RESIZE} },
 };
 
-/* compile-time check if all tags fit into an unsigned int bit array. */
-struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
-
 /* function implementations */
 
-wlr_surface *get_surface(ewlc_client *c)
+struct wlr_surface *get_surface(struct ewlc_client *c)
 {
 #ifdef XWAYLAND
         if (c->type != XDG_SHELL)
                 return c->surface.xwayland->surface;
-        return ->surface.xdg->surface;
-#else
-        return c->surface.xdg->surface;
 #endif
+        return c->surface.xdg->surface;
 }
 
 
 bool is_visible_on(struct ewlc_client *c, struct ewlc_output *o)
 {
-        if (c->output == o && (c->tags & o->tagset[o->seltags]))
+        if (c->output == o)
                 return true;
         return false;
 }
@@ -437,21 +387,17 @@ void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox)
                 c->geom.x = bbox->x + bbox->width - c->geom.width;
         if (c->geom.y >= bbox->y + bbox->height)
                 c->geom.y = bbox->y + bbox->height - c->geom.height;
-        if (c->geom.x + c->geom.width + 2 * c->bw <= bbox->x)
+        if (c->geom.x + c->geom.width + 2 * c->border_width <= bbox->x)
                 c->geom.x = bbox->x;
-        if (c->geom.y + c->geom.height + 2 * c->bw <= bbox->y)
+        if (c->geom.y + c->geom.height + 2 * c->border_width <= bbox->y)
                 c->geom.y = bbox->y;
 }
 
-void apply_rules(struct ewlc_client *c)
+void apply_title(struct ewlc_client *c)
 {
         const char *appid, *title;
-        unsigned int i, newtags = 0;
-        const Rule *r;
-        struct ewlc_output *output = active_output, *m;
 
         /* rule matching */
-        c->isfloating = 0;
 #ifdef XWAYLAND
         if (c->type != XDG_SHELL) {
                 update_window_type(c);
@@ -468,18 +414,7 @@ void apply_rules(struct ewlc_client *c)
         if (!title)
                 title = broken;
 
-        for (r = rules; r < END(rules); r++) {
-                if ((!r->title || strstr(title, r->title))
-                                && (!r->id || strstr(appid, r->id))) {
-                        c->isfloating = r->isfloating;
-                        newtags |= r->tags;
-                        i = 0;
-                        wl_list_for_each(m, &server.outputs, link)
-                                if (r->output == i++)
-                                        output = m;
-                }
-        }
-        set_output(c, output, newtags);
+        set_output(c, active_output);
 }
 
 void arrange(struct ewlc_output *o)
@@ -498,8 +433,8 @@ void cursor_axis_notify(struct wl_listener *listener, void *data)
         struct wlr_event_pointer_axis *event = data;
         /* Notify the client with pointer focus of the axis event. */
         wlr_seat_pointer_notify_axis(server.seat,
-                        event->time_msec, event->orientation, event->delta,
-                        event->delta_discrete, event->source);
+                                     event->time_msec, event->orientation, event->delta,
+                                     event->delta_discrete, event->source);
 }
 
 void cursor_button_notify(struct wl_listener *listener, void *data)
@@ -535,7 +470,7 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
                         server.cursor_mode = CUR_NORMAL;
                         /* Drop the window off on its new output */
                         active_output = get_output_at_point(server.cursor->x, server.cursor->y);
-                        set_output(server.grabbed_client, active_output, 0);
+                        set_output(server.grabbed_client, active_output);
                         return;
                 }
                 break;
@@ -564,10 +499,10 @@ void cleanup_keyboard(struct wl_listener *listener, void *data)
 void cleanup_output(struct wl_listener *listener, void *data)
 {
         struct wlr_output *wlr_output = data;
-        struct ewlc_output *m = wlr_output->data;
+        struct ewlc_output *o = wlr_output->data;
 
-        wl_list_remove(&m->destroy.link);
-        free(m);
+        wl_list_remove(&o->destroy.link);
+        free(o);
 }
 
 void commit_notify(struct wl_listener *listener, void *data)
@@ -617,8 +552,8 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
         /* This event is raised by the backend when a new output (aka a display or
          * output) becomes available. */
         struct wlr_output *wlr_output = data;
-        struct ewlc_output *m;
-        const MonitorRule *r;
+        struct ewlc_output *o;
+        const struct ewlc_output_rule *r;
 
         /* The mode is a tuple of (width, height, refresh rate), and each
          * output supports only a specific set of modes. We just pick the
@@ -627,13 +562,12 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
         wlr_output_set_mode(wlr_output, wlr_output_preferred_mode(wlr_output));
 
         /* Allocates and configures output state using configured rules */
-        m = wlr_output->data = calloc(1, sizeof(*m));
-        m->wlr_output = wlr_output;
-        m->tagset[0] = m->tagset[1] = 1;
+        o = wlr_output->data = calloc(1, sizeof(*o));
+        o->wlr_output = wlr_output;
         for (r = output_rules; r < END(output_rules); r++) {
                 if (!r->name || strstr(wlr_output->name, r->name)) {
-                        m->mfact = r->mfact;
-                        m->nmaster = r->nmaster;
+                        o->master_ratio = r->master_ratio;
+                        o->num_master = r->num_master;
                         wlr_output_set_scale(wlr_output, r->scale);
                         wlr_xcursor_manager_load(server.cursor_mgr, r->scale);
                         wlr_output_set_transform(wlr_output, r->rr);
@@ -641,12 +575,12 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
                 }
         }
         /* Set up event listeners */
-        m->frame.notify = render_output;
-        wl_signal_add(&wlr_output->events.frame, &m->frame);
-        m->destroy.notify = cleanup_output;
-        wl_signal_add(&wlr_output->events.destroy, &m->destroy);
+        o->frame.notify = render_output;
+        wl_signal_add(&wlr_output->events.frame, &o->frame);
+        o->destroy.notify = cleanup_output;
+        wl_signal_add(&wlr_output->events.destroy, &o->destroy);
 
-        wl_list_insert(&server.outputs, &m->link);
+        wl_list_insert(&server.outputs, &o->link);
 
         wlr_output_enable(wlr_output, 1);
         if (!wlr_output_commit(wlr_output))
@@ -678,7 +612,7 @@ void new_xdg_surface_notify(struct wl_listener *listener, void *data)
         /* Allocate a Client for this surface */
         c = xdg_surface->data = calloc(1, sizeof(*c));
         c->surface.xdg = xdg_surface;
-        c->bw = border_px;
+        c->border_width = border_px;
 
         /* Tell the client not to try anything fancy */
         wlr_xdg_toplevel_set_tiled(c->surface.xdg, WLR_EDGE_TOP |
@@ -756,16 +690,16 @@ void destroy_xdeco(struct wl_listener *listener, void *data)
 
 struct ewlc_output *get_next_output(int direction)
 {
-        struct ewlc_output *m;
+        struct ewlc_output *o;
 
         if (direction > 0) {
                 if (active_output->link.next == &server.outputs)
-                        return wl_container_of(server.outputs.next, m, link);
-                return wl_container_of(active_output->link.next, m, link);
+                        return wl_container_of(server.outputs.next, o, link);
+                return wl_container_of(active_output->link.next, o, link);
         } else {
                 if (active_output->link.prev == &server.outputs)
-                        return wl_container_of(server.outputs.prev, m, link);
-                return wl_container_of(active_output->link.prev, m, link);
+                        return wl_container_of(server.outputs.prev, o, link);
+                return wl_container_of(active_output->link.prev, o, link);
         }
 }
 
@@ -820,42 +754,42 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
 
 void focus_output(const Arg *arg)
 {
-        struct ewlc_client *sel = get_active_client();
+        struct ewlc_client *c = get_active_client();
 
         active_output = get_next_output(arg->i);
-        focus_client(sel, focus_top(active_output), 1);
+        focus_client(c, focus_top(active_output), 1);
 }
 
-void focus_stack(const Arg *arg)
+void focus_next_client(const Arg *arg)
 {
         /* Focus the next or previous client (in tiling order) on active_output */
-        struct ewlc_client *c, *sel = get_active_client();
-        if (!sel)
+        struct ewlc_client *c, *c_active = get_active_client();
+        if (!c_active)
                 return;
         if (arg->i > 0) {
-                wl_list_for_each(c, &sel->link, link) {
+                wl_list_for_each(c, &c_active->link, link) {
                         if (&c->link == &server.clients)
                                 continue;  /* wrap past the sentinel node */
                         if (is_visible_on(c, active_output))
                                 break;  /* found it */
                 }
         } else {
-                wl_list_for_each_reverse(c, &sel->link, link) {
+                wl_list_for_each_reverse(c, &c_active->link, link) {
                         if (&c->link == &server.clients)
                                 continue;  /* wrap past the sentinel node */
                         if (is_visible_on(c, active_output))
                                 break;  /* found it */
                 }
         }
-        /* If only one client is visible on active_output, then c == sel */
-        focus_client(sel, c, 1);
+        /* If only one client is visible on active_output, then c == c_active */
+        focus_client(c_active, c, 1);
 }
 
-struct ewlc_client *focus_top(struct ewlc_output *m)
+struct ewlc_client *focus_top(struct ewlc_output *o)
 {
         struct ewlc_client *c;
         wl_list_for_each(c, &server.focus_stack, focus_link)
-                if (is_visible_on(c, m))
+                if (is_visible_on(c, o))
                         return c;
         return NULL;
 }
@@ -869,7 +803,7 @@ void get_xdeco_mode(struct wl_listener *listener, void *data)
 
 void incn_master(const Arg *arg)
 {
-        active_output->nmaster = MAX(active_output->nmaster + arg->i, 0);
+        active_output->num_master = MAX(active_output->num_master + arg->i, 0);
         arrange(active_output);
 }
 
@@ -891,7 +825,7 @@ void backend_new_input_notify(struct wl_listener *listener, void *data)
                 break;
         }
         /* We need to let the wlr_seat know what our capabilities are, which is
-         * communiciated to the client. In dwl we always have a cursor, even if
+         * communiciated to the client. We always have a cursor, even if
          * there are no pointer devices, so we always include that capability. */
         /* XXX do we actually require a cursor? */
         caps = WL_SEAT_CAPABILITY_POINTER;
@@ -931,7 +865,7 @@ void keypress(struct wl_listener *listener, void *data)
         /* Get a list of keysyms based on the keymap for this keyboard */
         const xkb_keysym_t *syms;
         int nsyms = xkb_state_key_get_syms(
-                        kb->device->keyboard->xkb_state, keycode, &syms);
+                kb->device->keyboard->xkb_state, keycode, &syms);
 
         int handled = 0;
         uint32_t mods = wlr_keyboard_get_modifiers(kb->device->keyboard);
@@ -967,16 +901,16 @@ void keypress_mod(struct wl_listener *listener, void *data)
 
 void kill_client(const Arg *arg)
 {
-        struct ewlc_client *sel = get_active_client();
-        if (!sel)
+        struct ewlc_client *c = get_active_client();
+        if (!c)
                 return;
 
 #ifdef XWAYLAND
-        if (sel->type != XDG_SHELL)
-                wlr_xwayland_surface_close(sel->surface.xwayland);
+        if (c->type != XDG_SHELL)
+                wlr_xwayland_surface_close(c->surface.xwayland);
         else
 #endif
-                wlr_xdg_toplevel_send_close(sel->surface.xdg);
+                wlr_xdg_toplevel_send_close(c->surface.xdg);
 }
 
 void map_request(struct wl_listener *listener, void *data)
@@ -1001,18 +935,18 @@ void map_request(struct wl_listener *listener, void *data)
         if (c->type != XDG_SHELL) {
                 c->geom.x = c->surface.xwayland->x;
                 c->geom.y = c->surface.xwayland->y;
-                c->geom.width = c->surface.xwayland->width + 2 * c->bw;
-                c->geom.height = c->surface.xwayland->height + 2 * c->bw;
+                c->geom.width = c->surface.xwayland->width + 2 * c->border_width;
+                c->geom.height = c->surface.xwayland->height + 2 * c->border_width;
         } else
 #endif
         {
                 wlr_xdg_surface_get_geometry(c->surface.xdg, &c->geom);
-                c->geom.width += 2 * c->bw;
-                c->geom.height += 2 * c->bw;
+                c->geom.width += 2 * c->border_width;
+                c->geom.height += 2 * c->border_width;
         }
 
-        /* Set initial output, tags, floating status, and focus */
-        apply_rules(c);
+        /* Set initial output, floating status, and focus */
+        apply_title(c);
 }
 
 void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
@@ -1041,22 +975,28 @@ void motion_notify(uint32_t time)
         /* If we are currently grabbing the mouse, handle and return */
         if (server.cursor_mode == CUR_MOVE) {
                 /* Move the grabbed client to the new position. */
-                resize(server.grabbed_client, server.cursor->x - server.grabc_x, server.cursor->y - server.grabc_y,
-                                server.grabbed_client->geom.width, server.grabbed_client->geom.height, 1);
+                resize(server.grabbed_client,
+                       server.cursor->x - server.grabc_x,
+                       server.cursor->y - server.grabc_y,
+                       server.grabbed_client->geom.width,
+                       server.grabbed_client->geom.height, 1);
                 return;
         } else if (server.cursor_mode == CUR_RESIZE) {
-                resize(server.grabbed_client, server.grabbed_client->geom.x, server.grabbed_client->geom.y,
-                                server.cursor->x - server.grabbed_client->geom.x,
-                                server.cursor->y - server.grabbed_client->geom.y, 1);
+                resize(server.grabbed_client,
+                       server.grabbed_client->geom.x,
+                       server.grabbed_client->geom.y,
+                       server.cursor->x - server.grabbed_client->geom.x,
+                       server.cursor->y - server.grabbed_client->geom.y, 1);
                 return;
         }
 
 #ifdef XWAYLAND
         /* Find an independent under the pointer and send the event along. */
         if ((c = get_independent_at_point(server.cursor->x, server.cursor->y))) {
-                surface = wlr_surface_surface_at(c->surface.xwayland->surface,
-                                server.cursor->x - c->surface.xwayland->x - c->bw,
-                                server.cursor->y - c->surface.xwayland->y - c->bw, &sx, &sy);
+                surface = wlr_surface_surface_at(
+                        c->surface.xwayland->surface,
+                        server.cursor->x - c->surface.xwayland->x - c->border_width,
+                        server.cursor->y - c->surface.xwayland->y - c->border_width, &sx, &sy);
 
         /* Otherwise, find the client under the pointer and send the event along. */
         } else
@@ -1064,21 +1004,23 @@ void motion_notify(uint32_t time)
         if ((c = get_client_at_point(server.cursor->x, server.cursor->y))) {
 #ifdef XWAYLAND
                 if (c->type != XDG_SHELL)
-                        surface = wlr_surface_surface_at(c->surface.xwayland->surface,
-                                        server.cursor->x - c->geom.x - c->bw,
-                                        server.cursor->y - c->geom.y - c->bw, &sx, &sy);
+                        surface = wlr_surface_surface_at(
+                                c->surface.xwayland->surface,
+                                server.cursor->x - c->geom.x - c->border_width,
+                                server.cursor->y - c->geom.y - c->border_width, &sx, &sy);
                 else
 #endif
-                        surface = wlr_xdg_surface_surface_at(c->surface.xdg,
-                                        server.cursor->x - c->geom.x - c->bw,
-                                        server.cursor->y - c->geom.y - c->bw, &sx, &sy);
+                        surface = wlr_xdg_surface_surface_at(
+                                c->surface.xdg,
+                                server.cursor->x - c->geom.x - c->border_width,
+                                server.cursor->y - c->geom.y - c->border_width, &sx, &sy);
         }
         /* If there's no client surface under the cursor, set the cursor image to a
          * default. This is what makes the cursor image appear when you move it
          * off of a client or over its border. */
         if (!surface)
                 wlr_xcursor_manager_set_cursor_image(server.cursor_mgr,
-                                "left_ptr", server.cursor);
+                                                     "left_ptr", server.cursor);
 
         pointer_focus(c, surface, sx, sy, time);
 }
@@ -1187,7 +1129,7 @@ void render(struct wlr_surface *surface, int sx, int sy, void *data)
         wlr_output_layout_output_coords(server.output_layout, output, &ox, &oy);
 
         /* We also have to apply the scale factor for HiDPI outputs. This is only
-         * part of the puzzle, dwl does not fully support HiDPI. */
+         * part of the puzzle, ewlc does not fully support HiDPI. */
         obox.x = ox + rdata->x + sx;
         obox.y = oy + rdata->y + sy;
         obox.width = surface->current.width;
@@ -1218,9 +1160,9 @@ void render(struct wlr_surface *surface, int sx, int sy, void *data)
         wlr_surface_send_frame_done(surface, rdata->when);
 }
 
-void render_clients(struct ewlc_output *m, struct timespec *now)
+void render_clients(struct ewlc_output *o, struct timespec *now)
 {
-        struct ewlc_client *c, *sel = get_active_client();
+        struct ewlc_client *c, *active_c = get_active_client();
         const float *color;
         double ox, oy;
         int i, w, h;
@@ -1232,36 +1174,37 @@ void render_clients(struct ewlc_output *m, struct timespec *now)
         wl_list_for_each_reverse(c, &server.stack, stack_link) {
                 /* Only render visible clients which show on this output */
                 if (!is_visible_on(c, c->output) || !wlr_output_layout_intersects(
-                                        server.output_layout, m->wlr_output, &c->geom))
+                            server.output_layout, o->wlr_output, &c->geom))
                         continue;
 
                 surface = get_surface(c);
-                ox = c->geom.x, oy = c->geom.y;
-                wlr_output_layout_output_coords(server.output_layout, m->wlr_output,
-                                &ox, &oy);
+                ox = c->geom.x;
+                oy = c->geom.y;
+                wlr_output_layout_output_coords(server.output_layout, o->wlr_output,
+                                                &ox, &oy);
                 w = surface->current.width;
                 h = surface->current.height;
                 borders = (struct wlr_box[4]) {
-                        {ox, oy, w + 2 * c->bw, c->bw},             /* top */
-                        {ox, oy + c->bw, c->bw, h},                 /* left */
-                        {ox + c->bw + w, oy + c->bw, c->bw, h},     /* right */
-                        {ox, oy + c->bw + h, w + 2 * c->bw, c->bw}, /* bottom */
+                        {ox, oy, w + 2 * c->border_width, c->border_width},             /* top */
+                        {ox, oy + c->border_width, c->border_width, h},                 /* left */
+                        {ox + c->border_width + w, oy + c->border_width, c->border_width, h},     /* right */
+                        {ox, oy + c->border_width + h, w + 2 * c->border_width, c->border_width}, /* bottom */
                 };
 
                 /* Draw window borders */
-                color = (c == sel) ? focus_color : border_color;
+                color = (c == active_c) ? focus_color : border_color;
                 for (i = 0; i < 4; i++) {
-                        scale_box(&borders[i], m->wlr_output->scale);
+                        scale_box(&borders[i], o->wlr_output->scale);
                         wlr_render_rect(server.renderer, &borders[i], color,
-                                        m->wlr_output->transform_matrix);
+                                        o->wlr_output->transform_matrix);
                 }
 
                 /* This calls our render function for each surface among the
                  * xdg_surface's toplevel and popups. */
-                rdata.output = m->wlr_output;
+                rdata.output = o->wlr_output;
                 rdata.when = now;
-                rdata.x = c->geom.x + c->bw;
-                rdata.y = c->geom.y + c->bw;
+                rdata.x = c->geom.x + c->border_width;
+                rdata.y = c->geom.y + c->border_width;
 #ifdef XWAYLAND
                 if (c->type != XDG_SHELL)
                         wlr_surface_for_each_surface(c->surface.xwayland->surface, render, &rdata);
@@ -1278,7 +1221,7 @@ void render_output(struct wl_listener *listener, void *data)
 
         /* This function is called every time an output is ready to display a frame,
          * generally at the output's refresh rate (e.g. 60Hz). */
-        struct ewlc_output *m = wl_container_of(listener, m, frame);
+        struct ewlc_output *o = wl_container_of(listener, o, frame);
 
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1292,17 +1235,17 @@ void render_output(struct wl_listener *listener, void *data)
         }
 
         /* wlr_output_attach_render makes the OpenGL context current. */
-        if (!wlr_output_attach_render(m->wlr_output, NULL))
+        if (!wlr_output_attach_render(o->wlr_output, NULL))
                 return;
 
         if (render) {
                 /* Begin the renderer (calls glViewport and some other GL sanity checks) */
-                wlr_renderer_begin(server.renderer, m->wlr_output->width, m->wlr_output->height);
+                wlr_renderer_begin(server.renderer, o->wlr_output->width, o->wlr_output->height);
                 wlr_renderer_clear(server.renderer, root_color);
 
-                render_clients(m, &now);
+                render_clients(o, &now);
 #ifdef XWAYLAND
-                render_independents(m->wlr_output, &now);
+                render_independents(o->wlr_output, &now);
 #endif
 
                 /* Hardware cursors are rendered by the GPU on a separate plane, and can be
@@ -1311,14 +1254,14 @@ void render_output(struct wl_listener *listener, void *data)
                  * reason, wlroots provides a software fallback, which we ask it to render
                  * here. wlr_cursor handles configuring hardware vs software cursors for you,
                  * and this function is a no-op when hardware cursors are in use. */
-                wlr_output_render_software_cursors(m->wlr_output, NULL);
+                wlr_output_render_software_cursors(o->wlr_output, NULL);
 
                 /* Conclude rendering and swap the buffers, showing the final frame
                  * on-screen. */
                 wlr_renderer_end(server.renderer);
         }
 
-        wlr_output_commit(m->wlr_output);
+        wlr_output_commit(o->wlr_output);
 }
 
 void resize(struct ewlc_client *c, int x, int y, int w, int h, int interact)
@@ -1337,13 +1280,18 @@ void resize(struct ewlc_client *c, int x, int y, int w, int h, int interact)
         /* wlroots makes this a no-op if size hasn't changed */
 #ifdef XWAYLAND
         if (c->type != XDG_SHELL)
-                wlr_xwayland_surface_configure(c->surface.xwayland,
-                                c->geom.x, c->geom.y,
-                                c->geom.width - 2 * c->bw, c->geom.height - 2 * c->bw);
+                wlr_xwayland_surface_configure(
+                        c->surface.xwayland,
+                        c->geom.x,
+                        c->geom.y,
+                        c->geom.width - 2 * c->border_width,
+                        c->geom.height - 2 * c->border_width);
         else
 #endif
-                c->resize = wlr_xdg_toplevel_set_size(c->surface.xdg,
-                                c->geom.width - 2 * c->bw, c->geom.height - 2 * c->bw);
+                c->resize = wlr_xdg_toplevel_set_size(
+                        c->surface.xdg,
+                        c->geom.width - 2 * c->border_width,
+                        c->geom.height - 2 * c->border_width);
 }
 
 
@@ -1378,51 +1326,50 @@ void seat_request_cursor_notify(struct wl_listener *listener, void *data)
          * do so as the cursor moves between outputs. */
         if (event->seat_client == server.seat->pointer_state.focused_client)
                 wlr_cursor_set_surface(server.cursor, event->surface,
-                                event->hotspot_x, event->hotspot_y);
+                                       event->hotspot_x, event->hotspot_y);
 }
 
 void set_floating(struct ewlc_client *c, int floating)
 {
-        if (c->isfloating == floating)
+        if (c->is_floating == floating)
                 return;
-        c->isfloating = floating;
+        c->is_floating = floating;
         arrange(c->output);
 }
 
-/* arg > 1.0 will set mfact absolutely */
-void set_mfact(const Arg *arg)
+/* arg > 1.0 will set master_ratio absolutely */
+void set_master_ratio(const Arg *arg)
 {
         float f;
 
         if (!arg)
                 return;
-        f = arg->f < 1.0 ? arg->f + active_output->mfact : arg->f - 1.0;
+        f = arg->f < 1.0 ? arg->f + active_output->master_ratio : arg->f - 1.0;
         if (f < 0.1 || f > 0.9)
                 return;
-        active_output->mfact = f;
+        active_output->master_ratio = f;
         arrange(active_output);
 }
 
-void set_output(struct ewlc_client *c, struct ewlc_output *m, unsigned int newtags)
+void set_output(struct ewlc_client *c, struct ewlc_output *o)
 {
         struct ewlc_output *old_output = c->output;
         struct ewlc_client *old_c = get_active_client();
 
-        if (old_output == m)
+        if (old_output == o)
                 return;
-        c->output = m;
+        c->output = o;
 
         /* XXX leave/enter is not optimal but works */
         if (old_output) {
                 wlr_surface_send_leave(get_surface(c), old_output->wlr_output);
                 arrange(old_output);
         }
-        if (m) {
+        if (o) {
                 /* Make sure window actually overlaps with the output */
-                apply_bounds(c, &m->m);
-                wlr_surface_send_enter(get_surface(c), m->wlr_output);
-                c->tags = newtags ? newtags : m->tagset[m->seltags]; /* assign tags of target output */
-                arrange(m);
+                apply_bounds(c, &o->m);
+                wlr_surface_send_enter(get_surface(c), o->wlr_output);
+                arrange(o);
         }
         focus_client(old_c, focus_top(active_output), 1);
 }
@@ -1431,7 +1378,7 @@ void seat_request_set_primary_selection_notify(struct wl_listener *listener, voi
 {
         /* This event is raised by the seat when a client wants to set the selection,
          * usually when the user copies something. wlroots allows compositors to
-         * ignore such requests if they so choose, but in dwl we always honor
+         * ignore such requests if they so choose, but we always honor
          */
         struct wlr_seat_request_set_primary_selection_event *event = data;
         wlr_seat_set_primary_selection(server.seat, event->source, event->serial);
@@ -1441,7 +1388,7 @@ void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
 {
         /* This event is raised by the seat when a client wants to set the selection,
          * usually when the user copies something. wlroots allows compositors to
-         * ignore such requests if they so choose, but in dwl we always honor
+         * ignore such requests if they so choose, but we always honor
          */
         struct wlr_seat_request_set_selection_event *event = data;
         wlr_seat_set_selection(server.seat, event->source, event->serial);
@@ -1461,54 +1408,36 @@ void spawn(const Arg *arg)
         if (fork() == 0) {
                 setsid();
                 execvp(((char **)arg->v)[0], (char **)arg->v);
-                EERROR("dwl: execvp %s failed", ((char **)arg->v)[0]);
+                EERROR("ewlc: execvp %s failed", ((char **)arg->v)[0]);
         }
 }
 
-void tag(const Arg *arg)
-{
-        struct ewlc_client *sel = get_active_client();
-        if (sel && arg->ui & TAGMASK) {
-                sel->tags = arg->ui & TAGMASK;
-                focus_client(sel, focus_top(active_output), 1);
-                arrange(active_output);
-        }
-}
-
-void tag_output(const Arg *arg)
-{
-        struct ewlc_client *sel = get_active_client();
-        if (!sel)
-                return;
-        set_output(sel, get_next_output(arg->i), 0);
-}
-
-void tile(struct ewlc_output *m)
+void tile(struct ewlc_output *o)
 {
         unsigned int i, n = 0, h, mw, my, ty;
         struct ewlc_client *c;
 
         wl_list_for_each(c, &server.clients, link)
-                if (is_visible_on(c, m) && !c->isfloating)
+                if (is_visible_on(c, o) && !c->is_floating)
                         n++;
         if (n == 0)
                 return;
 
-        if (n > m->nmaster)
-                mw = m->nmaster ? m->w.width * m->mfact : 0;
+        if (n > o->num_master)
+                mw = o->num_master ? o->w.width * o->master_ratio : 0;
         else
-                mw = m->w.width;
+                mw = o->w.width;
         i = my = ty = 0;
         wl_list_for_each(c, &server.clients, link) {
-                if (!is_visible_on(c, m) || c->isfloating)
+                if (!is_visible_on(c, o) || c->is_floating)
                         continue;
-                if (i < m->nmaster) {
-                        h = (m->w.height - my) / (MIN(n, m->nmaster) - i);
-                        resize(c, m->w.x, m->w.y + my, mw, h, 0);
+                if (i < o->num_master) {
+                        h = (o->w.height - my) / (MIN(n, o->num_master) - i);
+                        resize(c, o->w.x, o->w.y + my, mw, h, 0);
                         my += c->geom.height;
                 } else {
-                        h = (m->w.height - ty) / (n - i);
-                        resize(c, m->w.x + mw, m->w.y + ty, m->w.width - mw, h, 0);
+                        h = (o->w.height - ty) / (n - i);
+                        resize(c, o->w.x + mw, o->w.y + ty, o->w.width - mw, h, 0);
                         ty += c->geom.height;
                 }
                 i++;
@@ -1521,33 +1450,7 @@ void toggle_floating(const Arg *arg)
         if (!c)
                 return;
         /* return if fullscreen */
-        set_floating(c, !c->isfloating);
-}
-
-void toggle_tag(const Arg *arg)
-{
-        unsigned int newtags;
-        struct ewlc_client *sel = get_active_client();
-        if (!sel)
-                return;
-        newtags = sel->tags ^ (arg->ui & TAGMASK);
-        if (newtags) {
-                sel->tags = newtags;
-                focus_client(sel, focus_top(active_output), 1);
-                arrange(active_output);
-        }
-}
-
-void toggle_view(const Arg *arg)
-{
-        struct ewlc_client *sel = get_active_client();
-        unsigned int newtagset = active_output->tagset[active_output->seltags] ^ (arg->ui & TAGMASK);
-
-        if (newtagset) {
-                active_output->tagset[active_output->seltags] = newtagset;
-                focus_client(sel, focus_top(active_output), 1);
-                arrange(active_output);
-        }
+        set_floating(c, !c->is_floating);
 }
 
 void unmap_notify(struct wl_listener *listener, void *data)
@@ -1559,20 +1462,15 @@ void unmap_notify(struct wl_listener *listener, void *data)
         if (c->type == X11_UNMANAGED)
                 return;
 #endif
-        set_output(c, NULL, 0);
+        set_output(c, NULL);
         wl_list_remove(&c->focus_link);
         wl_list_remove(&c->stack_link);
 }
 
 void view(const Arg *arg)
 {
-        struct ewlc_client *sel = get_active_client();
-        if ((arg->ui & TAGMASK) == active_output->tagset[active_output->seltags])
-                return;
-        active_output->seltags ^= 1; /* toggle sel tagset */
-        if (arg->ui & TAGMASK)
-                active_output->tagset[active_output->seltags] = arg->ui & TAGMASK;
-        focus_client(sel, focus_top(active_output), 1);
+        struct ewlc_client *c = get_active_client();
+        focus_client(c, focus_top(active_output), 1);
         arrange(active_output);
 }
 
@@ -1596,21 +1494,21 @@ struct ewlc_output *get_output_at_point(double x, double y)
 
 void zoom(const Arg *arg)
 {
-        struct ewlc_client *c, *sel, *old_sel;
+        struct ewlc_client *c, *c_active, *old_c_active;
 
-        sel = get_active_client();
-        old_sel = sel;
+        c_active = get_active_client();
+        old_c_active = c_active;
 
-        if (!sel || sel->isfloating)
+        if (!c_active || c_active->is_floating)
                 return;
 
-        /* Search for the first tiled window that is not sel, marking sel as
+        /* Search for the first tiled window that is not c_active, marking c_active as
          * NULL if we pass it along the way */
         wl_list_for_each(c, &server.clients, link) {
-                if (is_visible_on(c, active_output) && !c->isfloating) {
-                        if (c != sel)
+                if (is_visible_on(c, active_output) && !c->is_floating) {
+                        if (c != c_active)
                                 break;
-                        sel = NULL;
+                        c_active = NULL;
                 }
         }
 
@@ -1618,14 +1516,14 @@ void zoom(const Arg *arg)
         if (&c->link == &server.clients)
                 return;
 
-        /* If we passed sel, move c to the front; otherwise, move sel to the
+        /* If we passed c_active, move c to the front; otherwise, move c_active to the
          * front */
-        if (!sel)
-                sel = c;
-        wl_list_remove(&sel->link);
-        wl_list_insert(&server.clients, &sel->link);
+        if (!c_active)
+                c_active = c;
+        wl_list_remove(&c_active->link);
+        wl_list_insert(&server.clients, &c_active->link);
 
-        focus_client(old_sel, sel, 1);
+        focus_client(old_c_active, c_active, 1);
         arrange(active_output);
 }
 
@@ -1648,7 +1546,7 @@ void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
         c = xwayland_surface->data = calloc(1, sizeof(*c));
         c->surface.xwayland = xwayland_surface;
         c->type = xwayland_surface->override_redirect ? X11_UNMANAGED : X11_MANAGED;
-        c->bw = border_px;
+        c->border_width = border_px;
 
         /* Listen to the various events it can emit */
         c->map.notify = map_request;
@@ -1675,7 +1573,7 @@ Atom get_atom(xcb_connection_t *xc, const char *name)
         return atom;
 }
 
-void render_independents(struct wlr_output *output, struct timespec *now)
+void render_independents(struct wlr_output *o, struct timespec *now)
 {
         struct ewlc_client *c;
         struct render_data rdata;
@@ -1688,10 +1586,10 @@ void render_independents(struct wlr_output *output, struct timespec *now)
                 geom.height = c->surface.xwayland->height;
 
                 /* Only render visible clients which show on this output */
-                if (!wlr_output_layout_intersects(server.output_layout, output, &geom))
+                if (!wlr_output_layout_intersects(server.output_layout, o, &geom))
                         continue;
 
-                rdata.output = output;
+                rdata.output = o;
                 rdata.when = now;
                 rdata.x = c->surface.xwayland->x;
                 rdata.y = c->surface.xwayland->y;
@@ -1705,10 +1603,10 @@ void update_window_type(struct ewlc_client *c)
         size_t i;
         for (i = 0; i < c->surface.xwayland->window_type_len; i++)
                 if (c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeDialog] ||
-                        c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeSplash] ||
-                        c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeToolbar] ||
-                        c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeUtility])
-                        c->isfloating = 1;
+                    c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeSplash] ||
+                    c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeToolbar] ||
+                    c->surface.xwayland->window_type[i] == netatom[NetWMWindowTypeUtility])
+                        c->is_floating = 1;
 }
 
 void xwayland_ready_notify(struct wl_listener *listener, void *data)
@@ -1735,11 +1633,6 @@ void xwayland_ready_notify(struct wl_listener *listener, void *data)
 
 struct ewlc_client *get_independent_at_point(double x, double y)
 {
-        /* Find the topmost visible independent at point (x, y).
-         * For independents, the most recently created can be used as the "top".
-         * We rely on the X11 convention of unmapping unmanaged when the "owning"
-         * client loses focus, which ensures that unmanaged are only visible on
-         * the current tag. */
         struct ewlc_client *c;
         struct wlr_box geom;
         wl_list_for_each_reverse(c, &server.independents, link) {
@@ -1754,69 +1647,8 @@ struct ewlc_client *get_independent_at_point(double x, double y)
 }
 #endif
 
-void cleanup(void)
-{
-#ifdef XWAYLAND
-        wlr_xwayland_destroy(server.xwayland);
-#endif
-        wl_display_destroy_clients(server.display);
-        wl_display_destroy(server.display);
 
-        wlr_xcursor_manager_destroy(server.cursor_mgr);
-        wlr_cursor_destroy(server.cursor);
-        wlr_output_layout_destroy(server.output_layout);
-}
-
-void run(char *startup_cmd)
-{
-        pid_t startup_pid = -1;
-
-        /* Add a Unix socket to the Wayland display. */
-        const char *socket = wl_display_add_socket_auto(server.display);
-        if (!socket)
-                ERROR("startup: display_add_socket_auto");
-
-        /* Start the backend. This will enumerate outputs and inputs, become the DRM
-         * master, etc */
-        if (!wlr_backend_start(server.backend))
-                ERROR("startup: backend_start");
-
-        /* Now that outputs are initialized, choose initial active_output based on
-         * cursor position, and set default cursor image */
-        active_output = get_output_at_point(server.cursor->x, server.cursor->y);
-
-        /* XXX hack to get cursor to display in its initial location (100, 100)
-         * instead of (0, 0) and then jumping.  still may not be fully
-         * initialized, as the image/coordinates are not transformed for the
-         * output when displayed here */
-        wlr_cursor_warp_closest(server.cursor, NULL, server.cursor->x, server.cursor->y);
-        wlr_xcursor_manager_set_cursor_image(server.cursor_mgr, "left_ptr", server.cursor);
-
-        /* Set the WAYLAND_DISPLAY environment variable to our socket and run the
-         * startup command if requested. */
-        setenv("WAYLAND_DISPLAY", socket, 1);
-        if (startup_cmd) {
-                startup_pid = fork();
-                if (startup_pid < 0)
-                        EERROR("startup: fork");
-                if (startup_pid == 0) {
-                        execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
-                        EERROR("startup: execl");
-                }
-        }
-        /* Run the Wayland event loop. This does not return until you exit the
-         * compositor. Starting the backend rigged up all of the necessary event
-         * loop configuration to listen to libinput events, DRM events, generate
-         * frame events at the refresh rate, and so on. */
-        wl_display_run(server.display);
-
-        if (startup_cmd) {
-                kill(startup_pid, SIGTERM);
-                waitpid(startup_pid, NULL, 0);
-        }
-}
-
-void setup(void)
+void ewlc_setup(void)
 {
         /* The Wayland display is managed by libwayland. It handles accepting
          * clients from the Unix socket, manging Wayland globals, and so on. */
@@ -1972,17 +1804,81 @@ void setup(void)
 #endif
 }
 
-int wm_start()
+void ewlc_start()
 {
-        char *startup_cmd = NULL;
-        startup_cmd = "alacritty";
+        const char *socket;
+        char startup_cmd[] = "alacritty";
 
         // Wayland requires XDG_RUNTIME_DIR for creating its communications
         // socket
         if (!getenv("XDG_RUNTIME_DIR"))
                 ERROR("XDG_RUNTIME_DIR must be set");
-        setup();
-        run(startup_cmd);
-        cleanup();
+
+        ewlc_setup();
+
+        server.startup_pid = -1;
+
+        /* Add a Unix socket to the Wayland display. */
+        // const char *socket = wl_display_add_socket_auto(server.display);
+        socket = wl_display_add_socket_auto(server.display);
+
+        if (!socket)
+                ERROR("startup: display_add_socket_auto");
+
+        /* Start the backend. This will enumerate outputs and inputs, become the DRM
+         * master, etc */
+        if (!wlr_backend_start(server.backend))
+                ERROR("startup: backend_start");
+
+        /* Now that outputs are initialized, choose initial active_output based on
+         * cursor position, and set default cursor image */
+        active_output = get_output_at_point(server.cursor->x, server.cursor->y);
+
+        /* XXX hack to get cursor to display in its initial location (100, 100)
+         * instead of (0, 0) and then jumping.  still may not be fully
+         * initialized, as the image/coordinates are not transformed for the
+         * output when displayed here */
+        wlr_cursor_warp_closest(server.cursor, NULL, server.cursor->x, server.cursor->y);
+        wlr_xcursor_manager_set_cursor_image(server.cursor_mgr, "left_ptr", server.cursor);
+
+        /* Set the WAYLAND_DISPLAY environment variable to our socket and run the
+         * startup command if requested. */
+        setenv("WAYLAND_DISPLAY", socket, 1);
+        server.startup_pid = fork();
+        if (server.startup_pid < 0)
+                EERROR("startup: fork");
+        if (server.startup_pid == 0) {
+                execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
+                EERROR("startup: execl");
+        }
+        // wl_display_run(server.display);
+}
+
+int ewlc_cleanup(void)
+{
+        if (server.startup_pid != -1) {
+                kill(server.startup_pid, SIGTERM);
+                waitpid(server.startup_pid, NULL, 0);
+        }
+
+#ifdef XWAYLAND
+        wlr_xwayland_destroy(server.xwayland);
+#endif
+        wl_display_destroy_clients(server.display);
+        wl_display_destroy(server.display);
+
+        wlr_xcursor_manager_destroy(server.cursor_mgr);
+        wlr_cursor_destroy(server.cursor);
+
+        wlr_output_layout_destroy(server.output_layout);
         return EXIT_SUCCESS;
+}
+
+int ewlc_display_dispatch()
+{
+        struct wl_event_loop *loop = wl_display_get_event_loop(server.display);
+
+        wl_display_flush_clients(server.display);
+        wl_event_loop_dispatch(loop, -1);
+        return 0;
 }
