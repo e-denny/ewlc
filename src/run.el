@@ -73,14 +73,37 @@
                        (lambda ()
                          (while *ewlc-running*
                            ;; dispatch queued wayland events.
+                           (message "before dispatch")
                            (ewlc-display-dispatch)
+                           (message "before handle")
+                           (setq result (ewlc-handle-keybindings))
+                           (if result
+                               (message "result: t")
+                             (message "result: nil"))
                            (sleep-for 0.01)))
                        "loop-thread")))
-
 (defun exit-wc ()
   "Exit the wayland compositor."
   (ewlc-cleanup)
   (setq *ewlc-running* nil))
+
+(defun ewlc-apply-keybinding (mod key)
+  "Apply the keybings for MOD and KEY."
+  (message "into apply.")
+  1)
+
+
+(run-command term-cmd)
+
+(ewlc-focus-next-client 1)
+(ewlc-focus-next-client -1)
+
+(set-master-ratio -0.05)
+(set-master-ratio 0.05)
+
+(next-master 1)
+(next-master -1)
+
 
 (start-wc)
 (exit-wc)

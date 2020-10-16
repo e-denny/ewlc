@@ -16,7 +16,7 @@ LDFLAGS = -shared
 TARGET_LIB = ewlc.so
 
 SRCS = ewlc.c ewlc-module.c xdg-shell-protocol.c
-OBJS = $(SRCS:.c=.o	)
+OBJS = $(SRCS:.c=.o)
 
 .PHONY:all
 
