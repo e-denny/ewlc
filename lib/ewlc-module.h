@@ -11,5 +11,4 @@ extern emacs_value Fewlc_apply_keybinding;
 
 emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
                                      emacs_value args[], void *data);
-
 #endif /* __EWLC_MODULE_H */

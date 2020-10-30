@@ -79,10 +79,10 @@ struct ewlc_output;
 
 /*  structs  */
 struct ewlc_output {
-    struct wl_list link;
+    struct wl_list output_link;
     struct wlr_output *wlr_output;
-    struct wl_listener frame;
-    struct wl_listener destroy;
+    struct wl_listener output_frame_listener;
+    struct wl_listener output_destroy_listener;
     struct wlr_box m; /* output area */
     struct wlr_box w; /* window area */
     double master_ratio;
@@ -90,9 +90,9 @@ struct ewlc_output {
 };
 
 struct ewlc_client {
-    struct wl_list link;
-    struct wl_list focus_link;
-    struct wl_list stack_link;
+    struct wl_list client_link;
+    struct wl_list client_focus_link;
+    struct wl_list client_stack_link;
     union {
         struct wlr_xdg_surface *xdg;
 #ifdef XWAYLAND
@@ -100,13 +100,13 @@ struct ewlc_client {
 #endif
     } surface;
 #ifdef XWAYLAND
-    struct wl_listener activate;
+    struct wl_listener xwayland_surface_request_activate_listener;
     unsigned int type;
 #endif
-    struct wl_listener commit;
-    struct wl_listener map;
-    struct wl_listener unmap;
-    struct wl_listener destroy;
+    struct wl_listener surface_commit_listener;
+    struct wl_listener surface_map_listener;
+    struct wl_listener surface_unmap_listener;
+    struct wl_listener surface_destroy_listener;
     struct wlr_box geom; /* layout-relative, includes border */
     struct ewlc_output *output;
     int border_width;
@@ -118,31 +118,32 @@ struct ewlc_server {
     struct wl_display *display;
     struct wlr_renderer *renderer;
     struct wlr_compositor *compositor;
+    emacs_env *e_env;
 
     struct wlr_xdg_shell *xdg_shell;
-    struct wl_listener new_xdg_surface;
+    struct wl_listener xdg_shell_new_surface_listener;
 
     struct wlr_cursor *cursor;
     struct wlr_xcursor_manager *cursor_mgr;
-    struct wl_listener cursor_axis;
-    struct wl_listener cursor_button;
-    struct wl_listener cursor_frame;
-    struct wl_listener cursor_motion;
-    struct wl_listener cursor_motion_absolute;
+    struct wl_listener cursor_axis_listener;
+    struct wl_listener cursor_button_listener;
+    struct wl_listener cursor_frame_listener;
+    struct wl_listener cursor_motion_listener;
+    struct wl_listener cursor_motion_absolute_listener;
 
     struct wlr_seat *seat;
-    struct wl_listener seat_request_cursor;
-    struct wl_listener seat_request_set_selection;
-    struct wl_listener seat_request_set_primary_selection;
+    struct wl_listener seat_request_set_cursor_listener;
+    struct wl_listener seat_request_set_selection_listener;
+    struct wl_listener seat_request_set_primary_selection_listener;
 
     struct wlr_backend *backend;
-    struct wl_listener backend_new_input;
+    struct wl_listener backend_new_input_listener;
 
-    struct wl_list keyboards;
+    struct wl_list keyboard_list;
 
     struct wlr_output_layout *output_layout;
-    struct wl_list outputs;
-    struct wl_listener backend_new_output;
+    struct wl_list output_list;
+    struct wl_listener backend_new_output_listener;
 
     unsigned int cursor_mode;
 
@@ -151,18 +152,18 @@ struct ewlc_server {
     struct wlr_box output_geom;
 
     struct wlr_xdg_decoration_manager_v1 *xdeco_mgr;
-    struct wl_listener new_xdeco;
+    struct wl_listener xdeco_mgr_new_top_level_decoration_listener;
 
 #ifdef XWAYLAND
     struct wlr_xwayland *xwayland;
-    struct wl_listener new_xwayland_surface;
-    struct wl_listener xwayland_ready;
+    struct wl_listener new_xwayland_surface_listener;
+    struct wl_listener xwayland_ready_listener;
 #endif
 
-    struct wl_list clients;     /* tiling order */
-    struct wl_list focus_stack; /* focus order */
-    struct wl_list independents;
-    struct wl_list stack; /* stacking z-order */
+    struct wl_list client_list;     /* tiling order */
+    struct wl_list client_focus_list; /* focus order */
+    struct wl_list independent_list;
+    struct wl_list client_stack_list; /* stacking z-order */
 
     pid_t startup_pid;
 };
@@ -182,8 +183,8 @@ typedef struct {
 } Button;
 
 struct ewlc_decoration {
-    struct wl_listener request_mode;
-    struct wl_listener destroy;
+    struct wl_listener deco_request_mode_listener;
+    struct wl_listener deco_destroy_listener;
 };
 
 typedef struct {
@@ -194,12 +195,13 @@ typedef struct {
 } Key;
 
 struct ewlc_keyboard {
-    struct wl_list link;
+    struct wl_list keyboard_link;
     struct wlr_input_device *device;
 
-    struct wl_listener modifiers;
-    struct wl_listener key;
-    struct wl_listener destroy;
+    emacs_env *e_env;
+    struct wl_listener keyboard_modifiers_listener;
+    struct wl_listener Keyboard_key_listener;
+    struct wl_listener keyboard_destroy_listener;
 };
 
 struct ewlc_output_rule {
@@ -230,53 +232,45 @@ struct key_node {
 static void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox);
 static void arrange(struct ewlc_output *o);
 static void chvt(const Arg *arg);
-static void cleanup_keyboard(struct wl_listener *listener, void *data);
-static void cleanup_output(struct wl_listener *listener, void *data);
-static void commit_notify(struct wl_listener *listener, void *data);
-static void create_keyboard(struct wlr_input_device *device);
-static void new_xdg_surface_notify(struct wl_listener *listener, void *data);
+static void keyboard_destroy_notify(struct wl_listener *listener, void *data);
+static void output_destroy_notify(struct wl_listener *listener, void *data);
+static void xdg_surface_commit_notify(struct wl_listener *listener, void *data);
+void create_keyboard(emacs_env *env, struct wlr_input_device *device);
+static void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data);
 static void create_pointer(struct wlr_input_device *device);
-static void new_toplevel_decoration_notify(struct wl_listener *listener,
+static void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener,
                                            void *data);
-static void destroy_notify(struct wl_listener *listener, void *data);
-static void destroy_xdeco(struct wl_listener *listener, void *data);
-static struct ewlc_output *get_next_output(int dir);
+static void surface_destroy_notify(struct wl_listener *listener, void *data);
+static void deco_destroy_notify(struct wl_listener *listener, void *data);
+static struct ewlc_output *get_next_output(int direction);
 static void focus_client(struct ewlc_client *old, struct ewlc_client *c,
                          int lift);
-static void focus_output(const Arg *arg);
-static void focus_next_client(const Arg *arg);
 static struct ewlc_client *focus_top(struct ewlc_output *o);
-static void get_xdeco_mode(struct wl_listener *listener, void *data);
-static void incn_master(const Arg *arg);
+static void deco_request_mode_notify(struct wl_listener *listener, void *data);
 // static int keybinding(uint32_t mods, xkb_keysym_t sym);
-static void keypress(struct wl_listener *listener, void *data);
-static void keypress_mod(struct wl_listener *listener, void *data);
-static void kill_client(const Arg *arg);
-static void map_request(struct wl_listener *listener, void *data);
+void keyboard_key_notify(struct wl_listener *listener, void *data);
+static void keyboard_modifiers_notify(struct wl_listener *listener, void *data);
+static void surface_map_notify(struct wl_listener *listener, void *data);
 static void motion_notify(uint32_t time);
 static void move_resize(const Arg *arg);
 static void pointer_focus(struct ewlc_client *c, struct wlr_surface *surface,
                           double sx, double sy, uint32_t time);
-static void quit(const Arg *arg);
-static void render(struct wlr_surface *surface, int sx, int sy, void *data);
+static void render_surface(struct wlr_surface *surface, int sx, int sy, void *data);
 static void render_clients(struct ewlc_output *o, struct timespec *now);
-static void render_output(struct wl_listener *listener, void *data);
+static void output_frame_notify(struct wl_listener *listener, void *data);
 static void resize(struct ewlc_client *c, int x, int y, int w, int h,
                    int interact);
 static void scale_box(struct wlr_box *box, float scale);
 static struct ewlc_client *get_active_client(void);
 static void set_floating(struct ewlc_client *c, int floating);
-static void set_master_ratio(const Arg *arg);
 static void set_output(struct ewlc_client *c, struct ewlc_output *o);
 static void sigchld(int unused);
 static void spawn(const Arg *arg);
 static void tile(struct ewlc_output *o);
-static void toggle_floating(const Arg *arg);
-static void unmap_notify(struct wl_listener *listener, void *data);
-static void view(const Arg *arg);
+static void surface_unmap_notify(struct wl_listener *listener, void *data);
 static struct ewlc_client *get_client_at_point(double x, double y);
 static struct ewlc_output *get_output_at_point(double x, double y);
-static void zoom(const Arg *arg);
+void ewlc_setup(emacs_env *env);
 static bool is_visible_on(struct ewlc_client *c, struct ewlc_output *o);
 static void apply_title(struct ewlc_client *c);
 
@@ -287,7 +281,7 @@ static void cursor_motion_notify(struct wl_listener *listener, void *data);
 static void cursor_motion_absolute_notify(struct wl_listener *listener,
                                           void *data);
 
-static void seat_request_cursor_notify(struct wl_listener *listener,
+static void seat_request_set_cursor_notify(struct wl_listener *listener,
                                        void *data);
 static void seat_request_set_selection_notify(struct wl_listener *listener,
                                               void *data);
@@ -301,7 +295,8 @@ static void backend_new_output_notify(struct wl_listener *listener, void *data);
 static struct wlr_surface *get_surface(struct ewlc_client *c);
 
 #ifdef XWAYLAND
-static void activate_x11(struct wl_listener *listener, void *data);
+static void xwayland_surface_request_activate_notify(struct wl_listener *listener,
+                                                     void *data);
 static void new_xwayland_surface_notify(struct wl_listener *listener,
                                         void *data);
 static Atom get_atom(xcb_connection_t *xc, const char *name);
@@ -321,6 +316,8 @@ struct key_node *add_to_end(struct key_node *list, uint32_t mods, xkb_keysym_t s
                              struct wlr_event_keyboard_key *event);
 struct key_node *remove_from_start(struct key_node *list);
 
+void e_message(emacs_env *env, char *msg_str);
+
 /* global variables */
 static const char broken[] = "broken";
 
@@ -339,6 +336,7 @@ static const unsigned int border_px = 1; /* border pixel of windows */
 static const float root_color[] = {0.3, 0.3, 0.3, 1.0};
 static const float border_color[] = {0.5, 0.5, 0.5, 1.0};
 static const float focus_color[] = {1.0, 0.0, 0.0, 1.0};
+#define MODKEY WLR_MODIFIER_ALT
 
 /* outputs */
 static const struct ewlc_output_rule output_rules[] = {
@@ -360,7 +358,6 @@ static const struct xkb_rule_names xkb_rules = {
 static const int repeat_rate = 25;
 static const int repeat_delay = 600;
 
-#define MODKEY WLR_MODIFIER_ALT
 
 /* helper for spawning shell commands in the pre dwm-5.0 fashion */
 #define SHCMD(cmd)                                                             \
@@ -378,21 +375,6 @@ static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
     /* modifier                  key                 function        argument */
     {MODKEY | WLR_MODIFIER_SHIFT, XKB_KEY_Return, spawn, {.v = termcmd}},
-    {MODKEY, XKB_KEY_j, focus_next_client, {.i = +1}},
-    {MODKEY, XKB_KEY_k, focus_next_client, {.i = -1}},
-    {MODKEY, XKB_KEY_i, incn_master, {.i = +1}},
-    {MODKEY, XKB_KEY_d, incn_master, {.i = -1}},
-    {MODKEY, XKB_KEY_h, set_master_ratio, {.f = -0.05}},
-    {MODKEY, XKB_KEY_l, set_master_ratio, {.f = +0.05}},
-    {MODKEY, XKB_KEY_Return, zoom, {0}},
-    {MODKEY, XKB_KEY_Tab, view, {0}},
-    {MODKEY | WLR_MODIFIER_SHIFT, XKB_KEY_C, kill_client, {0}},
-    {MODKEY | WLR_MODIFIER_SHIFT, XKB_KEY_space, toggle_floating, {0}},
-    {MODKEY, XKB_KEY_0, view, {.ui = ~0}},
-    {MODKEY, XKB_KEY_comma, focus_output, {.i = -1}},
-    {MODKEY, XKB_KEY_period, focus_output, {.i = +1}},
-    {MODKEY | WLR_MODIFIER_SHIFT, XKB_KEY_Q, quit, {0}},
-    {WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT, XKB_KEY_Terminate_Server, quit, {0}},
 #define CHVT(n)                                                                \
     {                                                                          \
         WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT, XKB_KEY_XF86Switch_VT_##n, chvt, \
@@ -416,11 +398,19 @@ static const Key keys[] = {
 
 static const Button buttons[] = {
     {MODKEY, BTN_LEFT, move_resize, {.ui = CUR_MOVE}},
+    /* TODO: Fix this */
     {MODKEY, BTN_MIDDLE, toggle_floating, {0}},
     {MODKEY, BTN_RIGHT, move_resize, {.ui = CUR_RESIZE}},
 };
 
 /* function implementations */
+
+void e_message(emacs_env *env, char *msg_str)
+{
+    emacs_value e_msg;
+    e_msg = env->make_string(env, msg_str, strlen(msg_str));
+    env->funcall(env, env->intern(env, "message"), 1, (emacs_value[]){e_msg});
+}
 
 struct wlr_surface *get_surface(struct ewlc_client *c)
 {
@@ -548,34 +538,34 @@ void chvt(const Arg *arg)
     wlr_session_change_vt(wlr_backend_get_session(server.backend), arg->ui);
 }
 
-void cleanup_keyboard(struct wl_listener *listener, void *data)
+void keyboard_destroy_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_input_device *device = data;
     struct ewlc_keyboard *kb = device->data;
 
-    wl_list_remove(&kb->destroy.link);
+    wl_list_remove(&kb->keyboard_destroy_listener.link);
     free(kb);
 }
 
-void cleanup_output(struct wl_listener *listener, void *data)
+void output_destroy_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_output *wlr_output = data;
     struct ewlc_output *o = wlr_output->data;
 
-    wl_list_remove(&o->destroy.link);
+    wl_list_remove(&o->output_destroy_listener.link);
     free(o);
 }
 
-void commit_notify(struct wl_listener *listener, void *data)
+void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_client *c = wl_container_of(listener, c, commit);
+    struct ewlc_client *c = wl_container_of(listener, c, surface_commit_listener);
 
     /* mark a pending resize as completed */
     if (c->resize && c->resize <= c->surface.xdg->configure_serial)
         c->resize = 0;
 }
 
-void create_keyboard(struct wlr_input_device *device)
+void create_keyboard(emacs_env *env, struct wlr_input_device *device)
 {
     struct xkb_context *context;
     struct xkb_keymap *keymap;
@@ -583,6 +573,7 @@ void create_keyboard(struct wlr_input_device *device)
 
     kb = device->data = calloc(1, sizeof(*kb));
     kb->device = device;
+    kb->e_env = env;
 
     /* Prepare an XKB keymap and assign it to the keyboard. */
     context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
@@ -595,17 +586,19 @@ void create_keyboard(struct wlr_input_device *device)
     wlr_keyboard_set_repeat_info(device->keyboard, repeat_rate, repeat_delay);
 
     /* Here we set up listeners for keyboard events. */
-    kb->modifiers.notify = keypress_mod;
-    wl_signal_add(&device->keyboard->events.modifiers, &kb->modifiers);
-    kb->key.notify = keypress;
-    wl_signal_add(&device->keyboard->events.key, &kb->key);
-    kb->destroy.notify = cleanup_keyboard;
-    wl_signal_add(&device->events.destroy, &kb->destroy);
+    kb->keyboard_modifiers_listener.notify = keyboard_modifiers_notify;
+    wl_signal_add(&device->keyboard->events.modifiers, &kb->keyboard_modifiers_listener);
+
+    kb->Keyboard_key_listener.notify = keyboard_key_notify;
+    wl_signal_add(&device->keyboard->events.key, &kb->Keyboard_key_listener);
+
+    kb->keyboard_destroy_listener.notify = keyboard_destroy_notify;
+    wl_signal_add(&device->events.destroy, &kb->keyboard_destroy_listener);
 
     wlr_seat_set_keyboard(server.seat, device);
 
     /* And add the keyboard to our list of keyboards */
-    wl_list_insert(&server.keyboards, &kb->link);
+    wl_list_insert(&server.keyboard_list, &kb->keyboard_link);
 }
 
 void backend_new_output_notify(struct wl_listener *listener, void *data)
@@ -636,12 +629,12 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
         }
     }
     /* Set up event listeners */
-    o->frame.notify = render_output;
-    wl_signal_add(&wlr_output->events.frame, &o->frame);
-    o->destroy.notify = cleanup_output;
-    wl_signal_add(&wlr_output->events.destroy, &o->destroy);
+    o->output_frame_listener.notify = output_frame_notify;
+    wl_signal_add(&wlr_output->events.frame, &o->output_frame_listener);
+    o->output_destroy_listener.notify = output_destroy_notify;
+    wl_signal_add(&wlr_output->events.destroy, &o->output_destroy_listener);
 
-    wl_list_insert(&server.outputs, &o->link);
+    wl_list_insert(&server.output_list, &o->output_link);
 
     wlr_output_enable(wlr_output, 1);
     if (!wlr_output_commit(wlr_output))
@@ -660,12 +653,14 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
     server.output_geom = *wlr_output_layout_get_box(server.output_layout, NULL);
 }
 
-void new_xdg_surface_notify(struct wl_listener *listener, void *data)
+void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised when wlr_xdg_shell receives a new xdg surface from a
      * client, either a toplevel (application window) or popup. */
     struct wlr_xdg_surface *xdg_surface = data;
     struct ewlc_client *c;
+
+    // e_message(server.e_env, "into: new_surface_notify");
 
     if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL)
         return;
@@ -681,14 +676,17 @@ void new_xdg_surface_notify(struct wl_listener *listener, void *data)
                                                    WLR_EDGE_RIGHT);
 
     /* Listen to the various events it can emit */
-    c->commit.notify = commit_notify;
-    wl_signal_add(&xdg_surface->surface->events.commit, &c->commit);
-    c->map.notify = map_request;
-    wl_signal_add(&xdg_surface->events.map, &c->map);
-    c->unmap.notify = unmap_notify;
-    wl_signal_add(&xdg_surface->events.unmap, &c->unmap);
-    c->destroy.notify = destroy_notify;
-    wl_signal_add(&xdg_surface->events.destroy, &c->destroy);
+    c->surface_commit_listener.notify = xdg_surface_commit_notify;
+    wl_signal_add(&xdg_surface->surface->events.commit, &c->surface_commit_listener);
+
+    c->surface_map_listener.notify = surface_map_notify;
+    wl_signal_add(&xdg_surface->events.map, &c->surface_map_listener);
+
+    c->surface_unmap_listener.notify = surface_unmap_notify;
+    wl_signal_add(&xdg_surface->events.unmap, &c->surface_unmap_listener);
+
+    c->surface_destroy_listener.notify = surface_destroy_notify;
+    wl_signal_add(&xdg_surface->events.destroy, &c->surface_destroy_listener);
 }
 
 void create_pointer(struct wlr_input_device *device)
@@ -700,17 +698,19 @@ void create_pointer(struct wlr_input_device *device)
     wlr_cursor_attach_input_device(server.cursor, device);
 }
 
-void new_toplevel_decoration_notify(struct wl_listener *listener, void *data)
+void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
     struct ewlc_decoration *d = wlr_deco->data = calloc(1, sizeof(*d));
 
-    wl_signal_add(&wlr_deco->events.request_mode, &d->request_mode);
-    d->request_mode.notify = get_xdeco_mode;
-    wl_signal_add(&wlr_deco->events.destroy, &d->destroy);
-    d->destroy.notify = destroy_xdeco;
 
-    get_xdeco_mode(&d->request_mode, wlr_deco);
+    d->deco_request_mode_listener.notify = deco_request_mode_notify;
+    wl_signal_add(&wlr_deco->events.request_mode, &d->deco_request_mode_listener);
+
+    d->deco_destroy_listener.notify = deco_destroy_notify;
+    wl_signal_add(&wlr_deco->events.destroy, &d->deco_destroy_listener);
+
+    deco_request_mode_notify(&d->deco_request_mode_listener, wlr_deco);
 }
 
 void cursor_frame_notify(struct wl_listener *listener, void *data)
@@ -723,29 +723,29 @@ void cursor_frame_notify(struct wl_listener *listener, void *data)
     wlr_seat_pointer_notify_frame(server.seat);
 }
 
-void destroy_notify(struct wl_listener *listener, void *data)
+void surface_destroy_notify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is destroyed and should never be shown again. */
-    struct ewlc_client *c = wl_container_of(listener, c, destroy);
-    wl_list_remove(&c->map.link);
-    wl_list_remove(&c->unmap.link);
-    wl_list_remove(&c->destroy.link);
+    struct ewlc_client *c = wl_container_of(listener, c, surface_destroy_listener);
+    wl_list_remove(&c->surface_map_listener.link);
+    wl_list_remove(&c->surface_unmap_listener.link);
+    wl_list_remove(&c->surface_destroy_listener.link);
 #ifdef XWAYLAND
     if (c->type == X11_MANAGED)
-        wl_list_remove(&c->activate.link);
+        wl_list_remove(&c->xwayland_surface_request_activate_listener.link);
     else if (c->type == XDG_SHELL)
 #endif
-        wl_list_remove(&c->commit.link);
+        wl_list_remove(&c->surface_commit_listener.link);
     free(c);
 }
 
-void destroy_xdeco(struct wl_listener *listener, void *data)
+void deco_destroy_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
     struct ewlc_decoration *d = wlr_deco->data;
 
-    wl_list_remove(&d->destroy.link);
-    wl_list_remove(&d->request_mode.link);
+    wl_list_remove(&d->deco_destroy_listener.link);
+    wl_list_remove(&d->deco_request_mode_listener.link);
     free(d);
 }
 
@@ -754,24 +754,25 @@ struct ewlc_output *get_next_output(int direction)
     struct ewlc_output *o;
 
     if (direction > 0) {
-        if (active_output->link.next == &server.outputs)
-            return wl_container_of(server.outputs.next, o, link);
-        return wl_container_of(active_output->link.next, o, link);
+        if (active_output->output_link.next == &server.output_list)
+            return wl_container_of(server.output_list.next, o, output_link);
+        return wl_container_of(active_output->output_link.next, o, output_link);
     } else {
-        if (active_output->link.prev == &server.outputs)
-            return wl_container_of(server.outputs.prev, o, link);
-        return wl_container_of(active_output->link.prev, o, link);
+        if (active_output->output_link.prev == &server.output_list)
+            return wl_container_of(server.output_list.prev, o, output_link);
+        return wl_container_of(active_output->output_link.prev, o, output_link);
     }
 }
 
+// Called by emacs
 void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
 {
     struct wlr_keyboard *kb = wlr_seat_get_keyboard(server.seat);
 
     /* Raise client in stacking order if requested */
     if (c && lift) {
-        wl_list_remove(&c->stack_link);
-        wl_list_insert(&server.stack, &c->stack_link);
+        wl_list_remove(&c->client_stack_link);
+        wl_list_insert(&server.client_stack_list, &c->client_stack_link);
     }
 
     /* Nothing else to do? */
@@ -800,8 +801,8 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
                                    kb->num_keycodes, &kb->modifiers);
 
     /* Put the new client atop the focus stack and select its output */
-    wl_list_remove(&c->focus_link);
-    wl_list_insert(&server.focus_stack, &c->focus_link);
+    wl_list_remove(&c->client_focus_link);
+    wl_list_insert(&server.client_focus_list, &c->client_focus_link);
     active_output = c->output;
 
     /* Activate the new client */
@@ -813,14 +814,16 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
         wlr_xdg_toplevel_set_activated(c->surface.xdg, 1);
 }
 
-void focus_output(const Arg *arg)
+// Called by emacs
+void ewlc_focus_output(int direction)
 {
     struct ewlc_client *c = get_active_client();
 
-    active_output = get_next_output(arg->i);
+    active_output = get_next_output(direction);
     focus_client(c, focus_top(active_output), 1);
 }
 
+// Called by emacs
 void ewlc_focus_next_client(int direction)
 {
     /* Focus the next or previous client (in tiling order) on active_output */
@@ -828,17 +831,17 @@ void ewlc_focus_next_client(int direction)
     if (!c_active)
         return;
     if (direction > 0) {
-        wl_list_for_each(c_next, &c_active->link, link)
+        wl_list_for_each(c_next, &c_active->client_link, client_link)
         {
-            if (&c_next->link == &server.clients)
+            if (&c_next->client_link == &server.client_list)
                 continue; /* wrap past the sentinel node */
             if (is_visible_on(c_next, active_output))
                 break; /* found it */
         }
     } else {
-        wl_list_for_each_reverse(c_next, &c_active->link, link)
+        wl_list_for_each_reverse(c_next, &c_active->client_link, client_link)
         {
-            if (&c_next->link == &server.clients)
+            if (&c_next->client_link == &server.client_list)
                 continue; /* wrap past the sentinel node */
             if (is_visible_on(c_next, active_output))
                 break; /* found it */
@@ -849,53 +852,40 @@ void ewlc_focus_next_client(int direction)
     focus_client(c_active, c_next, 1);
 }
 
-void focus_next_client(const Arg *arg)
+// called by emacs - ahould be number of masters
+void ewlc_next_master(int direction)
 {
-    /* Focus the next or previous client (in tiling order) on active_output */
-    struct ewlc_client *c, *c_active = get_active_client();
-    if (!c_active)
+    active_output->num_master = MAX(active_output->num_master + direction, 0);
+    arrange(active_output);
+}
+
+// Called by emacs
+void ewlc_set_master_ratio(float inc)
+{
+    float f;
+
+    f = inc < 1.0 ? inc + active_output->master_ratio : inc - 1.0;
+    if (f < 0.1 || f > 0.9)
         return;
-    if (arg->i > 0) {
-        wl_list_for_each(c, &c_active->link, link)
-        {
-            if (&c->link == &server.clients)
-                continue; /* wrap past the sentinel node */
-            if (is_visible_on(c, active_output))
-                break; /* found it */
-        }
-    } else {
-        wl_list_for_each_reverse(c, &c_active->link, link)
-        {
-            if (&c->link == &server.clients)
-                continue; /* wrap past the sentinel node */
-            if (is_visible_on(c, active_output))
-                break; /* found it */
-        }
-    }
-    /* If only one client is visible on active_output, then c == c_active */
-    focus_client(c_active, c, 1);
+    active_output->master_ratio = f;
+    arrange(active_output);
 }
 
 struct ewlc_client *focus_top(struct ewlc_output *o)
 {
     struct ewlc_client *c;
-    wl_list_for_each(c, &server.focus_stack,
-                     focus_link) if (is_visible_on(c, o)) return c;
+    wl_list_for_each(c, &server.client_focus_list,
+                     client_focus_link) if (is_visible_on(c, o)) return c;
     return NULL;
 }
 
-void get_xdeco_mode(struct wl_listener *listener, void *data)
+void deco_request_mode_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
     wlr_xdg_toplevel_decoration_v1_set_mode(
         wlr_deco, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 }
 
-void incn_master(const Arg *arg)
-{
-    active_output->num_master = MAX(active_output->num_master + arg->i, 0);
-    arrange(active_output);
-}
 
 void backend_new_input_notify(struct wl_listener *listener, void *data)
 {
@@ -903,9 +893,11 @@ void backend_new_input_notify(struct wl_listener *listener, void *data)
      * available. */
     struct wlr_input_device *device = data;
     uint32_t caps;
+    struct ewlc_server *s = wl_container_of(listener, s, backend_new_input_listener);
+
     switch (device->type) {
     case WLR_INPUT_DEVICE_KEYBOARD:
-        create_keyboard(device);
+        create_keyboard(s->e_env, device);
         break;
     case WLR_INPUT_DEVICE_POINTER:
         create_pointer(device);
@@ -919,7 +911,7 @@ void backend_new_input_notify(struct wl_listener *listener, void *data)
      * there are no pointer devices, so we always include that capability. */
     /* XXX do we actually require a cursor? */
     caps = WL_SEAT_CAPABILITY_POINTER;
-    if (!wl_list_empty(&server.keyboards))
+    if (!wl_list_empty(&server.keyboard_list))
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
     wlr_seat_set_capabilities(server.seat, caps);
 }
@@ -988,47 +980,6 @@ struct key_node *remove_from_start(struct key_node *list)
     return list;
 }
 
-/* int keybinding(uint32_t mods, xkb_keysym_t sym) */
-/* { */
-/*     /\* */
-/*      * Here we handle compositor keybindings. This is when the compositor is */
-/*      * processing keys, rather than passing them on to the client for its own */
-/*      * processing. */
-/*      *\/ */
-/*     int handled = 0; */
-/*     const Key *k; */
-/*     emacs_env *env; */
-/*     emacs_value e_handled; */
-/*     emacs_value e_mods, e_key; */
-/*     emacs_value data; */
-/*     char key_name[4096]; */
-/*     char mods_name[4096]; */
-/*     static const char message[] = "hello"; */
-/*     int mods_len; */
-
-/*     if ((mods & WLR_MODIFIER_ALT) == WLR_MODIFIER_ALT) { */
-/*         strcpy(mods_name, "M-"); */
-/*         mods_len = strlen(mods_name); */
-/*         // e_mods = env->make_string(env, mods_name, mods_len); */
-/*         data = env->make_integer(env, handled); */
-/*         if (xkb_keysym_get_name(sym, key_name, sizeof(key_name)) == -1) */
-/*             ERROR("xkb_keysym_get_name failed.:"); */
-/*         e_key = env->make_string(env, key_name, strlen(key_name)); */
-/*         e_handled = env->funcall(env, Fewlc_apply_keybinding, 2, */
-/*                                  (emacs_value[]){e_mods, e_key}); */
-/*         handled = env->extract_integer(env, e_handled); */
-/*     } */
-
-/*     for (k = keys; k < END(keys); k++) { */
-/*         if (CLEANMASK(mods) == CLEANMASK(k->mod) && sym == k->keysym && */
-/*             k->func) { */
-/*             k->func(&k->arg); */
-/*             handled = 1; */
-/*         } */
-/*     } */
-/*     return handled; */
-/* } */
-
 emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
                                      emacs_value args[], void *data)
 {
@@ -1045,7 +996,6 @@ emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
 
     if (key_list == NULL)
         return Qnil;
-    printf("into: Fewlc_handle_keybindings\n");
 
     handled = 0;
     mods = key_list->mods;
@@ -1055,25 +1005,17 @@ emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
 
     if ((mods & WLR_MODIFIER_ALT) == WLR_MODIFIER_ALT) {
         strcpy(mods_str, "M-");
-        printf("mods_str: %s\n", mods_str);
         e_mods = env->make_string(env, mods_str, strlen(mods_str));
 
         if (xkb_keysym_get_name(sym, key_str, sizeof(key_str)) == -1)
             ERROR("xkb_keysym_get_name failed.:");
-        printf("key_str: %s\n", key_str);
         e_key = env->make_string(env, key_str, strlen(key_str));
-        printf("check1.\n");
         e_handled = env->funcall(env, env->intern(env, "ewlc-apply-keybinding"), 2,
                                  (emacs_value[]){e_mods, e_key});
-        /* e_handled = env->funcall(env, Fewlc_apply_keybinding, 2, */
-        /*                          (emacs_value[]){e_mods, e_key}); */
-        printf("check2.\n");
         handled = env->extract_integer(env, e_handled);
-        printf("check3: handled = %d.\n", handled);
     }
 
     key_list = remove_from_start(key_list);
-    printf("check4.\n");
 
     if (!handled) {
         /* Pass non-handled keycodes straight to client. */
@@ -1081,14 +1023,13 @@ emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
         wlr_seat_keyboard_notify_key(server.seat, event->time_msec,
                                      event->keycode, event->state);
     }
-    printf("check5.\n");
     return Qt;
 }
 
-void keypress(struct wl_listener *listener, void *data)
+void keyboard_key_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised when a key is pressed or released. */
-    struct ewlc_keyboard *kb = wl_container_of(listener, kb, key);
+    struct ewlc_keyboard *kb = wl_container_of(listener, kb, Keyboard_key_listener);
     struct wlr_event_keyboard_key *event = data;
     /* Translate libinput keycode -> xkbcommon */
     uint32_t keycode = event->keycode + 8;
@@ -1096,6 +1037,8 @@ void keypress(struct wl_listener *listener, void *data)
     const xkb_keysym_t *syms;
     int nsyms;
     uint32_t mods;
+
+    // e_message(kb->e_env, "into: keyboard_key_notify");
 
     nsyms = xkb_state_key_get_syms(kb->device->keyboard->xkb_state,
                                        keycode, &syms);
@@ -1119,11 +1062,11 @@ void keypress(struct wl_listener *listener, void *data)
                                  event->keycode, event->state);
 }
 
-void keypress_mod(struct wl_listener *listener, void *data)
+void keyboard_modifiers_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised when a modifier key, such as shift or alt, is
      * pressed. We simply communicate this to the client. */
-    struct ewlc_keyboard *kb = wl_container_of(listener, kb, modifiers);
+    struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
     /*
      * A seat can only have one keyboard, but this is a limitation of the
      * Wayland protocol - not wlroots. We assign all connected keyboards to the
@@ -1136,7 +1079,8 @@ void keypress_mod(struct wl_listener *listener, void *data)
                                        &kb->device->keyboard->modifiers);
 }
 
-void kill_client(const Arg *arg)
+// Called by emacs
+void ewlc_kill_client()
 {
     struct ewlc_client *c = get_active_client();
     if (!c)
@@ -1150,23 +1094,23 @@ void kill_client(const Arg *arg)
         wlr_xdg_toplevel_send_close(c->surface.xdg);
 }
 
-void map_request(struct wl_listener *listener, void *data)
+void surface_map_notify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
-    struct ewlc_client *c = wl_container_of(listener, c, map);
+    struct ewlc_client *c = wl_container_of(listener, c, surface_map_listener);
 
 #ifdef XWAYLAND
     if (c->type == X11_UNMANAGED) {
         /* Insert this independent into independents lists. */
-        wl_list_insert(&server.independents, &c->link);
+        wl_list_insert(&server.independent_list, &c->client_link);
         return;
     }
 #endif
 
     /* Insert this client into client lists. */
-    wl_list_insert(&server.clients, &c->link);
-    wl_list_insert(&server.focus_stack, &c->focus_link);
-    wl_list_insert(&server.stack, &c->stack_link);
+    wl_list_insert(&server.client_list, &c->client_link);
+    wl_list_insert(&server.client_focus_list, &c->client_focus_link);
+    wl_list_insert(&server.client_stack_list, &c->client_stack_link);
 
 #ifdef XWAYLAND
     if (c->type != XDG_SHELL) {
@@ -1337,12 +1281,13 @@ void pointer_focus(struct ewlc_client *c, struct wlr_surface *surface,
         focus_client(get_active_client(), c, 0);
 }
 
-void quit(const Arg *arg)
+// called by emacs
+void ewlc_quit()
 {
     wl_display_terminate(server.display);
 }
 
-void render(struct wlr_surface *surface, int sx, int sy, void *data)
+void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
 {
     /* This function is called for every surface that needs to be rendered. */
     struct render_data *rdata = data;
@@ -1411,7 +1356,7 @@ void render_clients(struct ewlc_output *o, struct timespec *now)
     /* Each subsequent window we render is rendered on top of the last. Because
      * our stacking list is ordered front-to-back, we iterate over it backwards.
      */
-    wl_list_for_each_reverse(c, &server.stack, stack_link)
+    wl_list_for_each_reverse(c, &server.client_stack_list, client_stack_link)
     {
         /* Only render visible clients which show on this output */
         if (!is_visible_on(c, c->output) ||
@@ -1451,28 +1396,28 @@ void render_clients(struct ewlc_output *o, struct timespec *now)
         rdata.y = c->geom.y + c->border_width;
 #ifdef XWAYLAND
         if (c->type != XDG_SHELL)
-            wlr_surface_for_each_surface(c->surface.xwayland->surface, render,
+            wlr_surface_for_each_surface(c->surface.xwayland->surface, render_surface,
                                          &rdata);
         else
 #endif
-            wlr_xdg_surface_for_each_surface(c->surface.xdg, render, &rdata);
+            wlr_xdg_surface_for_each_surface(c->surface.xdg, render_surface, &rdata);
     }
 }
 
-void render_output(struct wl_listener *listener, void *data)
+void output_frame_notify(struct wl_listener *listener, void *data)
 {
     struct ewlc_client *c;
     int render = 1;
 
     /* This function is called every time an output is ready to display a frame,
      * generally at the output's refresh rate (e.g. 60Hz). */
-    struct ewlc_output *o = wl_container_of(listener, o, frame);
+    struct ewlc_output *o = wl_container_of(listener, o, output_frame_listener);
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     /* Do not render if any XDG clients have an outstanding resize. */
-    wl_list_for_each(c, &server.stack, stack_link)
+    wl_list_for_each(c, &server.client_stack_list, client_stack_link)
     {
         if (c->resize) {
             wlr_surface_send_frame_done(get_surface(c), &now);
@@ -1551,14 +1496,15 @@ void scale_box(struct wlr_box *box, float scale)
 
 struct ewlc_client *get_active_client(void)
 {
-    struct ewlc_client *c =
-        wl_container_of(server.focus_stack.next, c, focus_link);
-    if (wl_list_empty(&server.focus_stack) || !is_visible_on(c, active_output))
+    struct ewlc_client *c = wl_container_of(server.client_focus_list.next,
+                                            c,
+                                            client_focus_link);
+    if (wl_list_empty(&server.client_focus_list) || !is_visible_on(c, active_output))
         return NULL;
     return c;
 }
 
-void seat_request_cursor_notify(struct wl_listener *listener, void *data)
+void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the seat when a client provides a cursor image */
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
@@ -1584,19 +1530,6 @@ void set_floating(struct ewlc_client *c, int floating)
     arrange(c->output);
 }
 
-/* arg > 1.0 will set master_ratio absolutely */
-void set_master_ratio(const Arg *arg)
-{
-    float f;
-
-    if (!arg)
-        return;
-    f = arg->f < 1.0 ? arg->f + active_output->master_ratio : arg->f - 1.0;
-    if (f < 0.1 || f > 0.9)
-        return;
-    active_output->master_ratio = f;
-    arrange(active_output);
-}
 
 void set_output(struct ewlc_client *c, struct ewlc_output *o)
 {
@@ -1666,8 +1599,8 @@ void tile(struct ewlc_output *o)
     unsigned int i, n = 0, h, mw, my, ty;
     struct ewlc_client *c;
 
-    wl_list_for_each(c, &server.clients,
-                     link) if (is_visible_on(c, o) && !c->is_floating) n++;
+    wl_list_for_each(c, &server.client_list,
+                     client_link) if (is_visible_on(c, o) && !c->is_floating) n++;
     if (n == 0)
         return;
 
@@ -1676,7 +1609,7 @@ void tile(struct ewlc_output *o)
     else
         mw = o->w.width;
     i = my = ty = 0;
-    wl_list_for_each(c, &server.clients, link)
+    wl_list_for_each(c, &server.client_list, client_link)
     {
         if (!is_visible_on(c, o) || c->is_floating)
             continue;
@@ -1693,7 +1626,8 @@ void tile(struct ewlc_output *o)
     }
 }
 
-void toggle_floating(const Arg *arg)
+// Called by emacs
+void ewlc_toggle_floating()
 {
     struct ewlc_client *c = get_active_client();
     if (!c)
@@ -1702,21 +1636,22 @@ void toggle_floating(const Arg *arg)
     set_floating(c, !c->is_floating);
 }
 
-void unmap_notify(struct wl_listener *listener, void *data)
+void surface_unmap_notify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is unmapped, and should no longer be shown. */
-    struct ewlc_client *c = wl_container_of(listener, c, unmap);
-    wl_list_remove(&c->link);
+    struct ewlc_client *c = wl_container_of(listener, c, surface_unmap_listener);
+    wl_list_remove(&c->client_link);
 #ifdef XWAYLAND
     if (c->type == X11_UNMANAGED)
         return;
 #endif
     set_output(c, NULL);
-    wl_list_remove(&c->focus_link);
-    wl_list_remove(&c->stack_link);
+    wl_list_remove(&c->client_focus_link);
+    wl_list_remove(&c->client_stack_link);
 }
 
-void view(const Arg *arg)
+// Called by emacs
+void ewlc_view()
 {
     struct ewlc_client *c = get_active_client();
     focus_client(c, focus_top(active_output), 1);
@@ -1729,10 +1664,11 @@ struct ewlc_client *get_client_at_point(double x, double y)
      * borders. This relies on stack being ordered from top to bottom. */
     struct ewlc_client *c;
 
-    wl_list_for_each(
-        c, &server.stack,
-        stack_link) if (is_visible_on(c, c->output) &&
-                        wlr_box_contains_point(&c->geom, x, y)) return c;
+    wl_list_for_each(c, &server.client_stack_list, client_stack_link)
+        if (is_visible_on(c, c->output) &&
+            wlr_box_contains_point(&c->geom, x, y))
+            return c;
+
     return NULL;
 }
 
@@ -1743,7 +1679,8 @@ struct ewlc_output *get_output_at_point(double x, double y)
     return o ? o->data : NULL;
 }
 
-void zoom(const Arg *arg)
+// called by emacs
+void ewlc_zoom()
 {
     struct ewlc_client *c, *c_active, *old_c_active;
 
@@ -1755,7 +1692,7 @@ void zoom(const Arg *arg)
 
     /* Search for the first tiled window that is not c_active, marking c_active
      * as NULL if we pass it along the way */
-    wl_list_for_each(c, &server.clients, link)
+    wl_list_for_each(c, &server.client_list, client_link)
     {
         if (is_visible_on(c, active_output) && !c->is_floating) {
             if (c != c_active)
@@ -1765,24 +1702,25 @@ void zoom(const Arg *arg)
     }
 
     /* Return if no other tiled window was found */
-    if (&c->link == &server.clients)
+    if (&c->client_link == &server.client_list)
         return;
 
     /* If we passed c_active, move c to the front; otherwise, move c_active to
      * the front */
     if (!c_active)
         c_active = c;
-    wl_list_remove(&c_active->link);
-    wl_list_insert(&server.clients, &c_active->link);
+    wl_list_remove(&c_active->client_link);
+    wl_list_insert(&server.client_list, &c_active->client_link);
 
     focus_client(old_c_active, c_active, 1);
     arrange(active_output);
 }
 
 #ifdef XWAYLAND
-void activate_x11(struct wl_listener *listener, void *data)
+void xwayland_surface_request_activate_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_client *c = wl_container_of(listener, c, activate);
+    struct ewlc_client *c = wl_container_of(listener, c,
+                                            xwayland_surface_request_activate_listener);
 
     /* Only "managed" windows can be activated */
     if (c->type == X11_MANAGED)
@@ -1801,14 +1739,19 @@ void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
     c->border_width = border_px;
 
     /* Listen to the various events it can emit */
-    c->map.notify = map_request;
-    wl_signal_add(&xwayland_surface->events.map, &c->map);
-    c->unmap.notify = unmap_notify;
-    wl_signal_add(&xwayland_surface->events.unmap, &c->unmap);
-    c->activate.notify = activate_x11;
-    wl_signal_add(&xwayland_surface->events.request_activate, &c->activate);
-    c->destroy.notify = destroy_notify;
-    wl_signal_add(&xwayland_surface->events.destroy, &c->destroy);
+    c->surface_map_listener.notify = surface_map_notify;
+    wl_signal_add(&xwayland_surface->events.map, &c->surface_map_listener);
+
+    c->surface_unmap_listener.notify = surface_unmap_notify;
+    wl_signal_add(&xwayland_surface->events.unmap, &c->surface_unmap_listener);
+
+    c->xwayland_surface_request_activate_listener.notify =
+        xwayland_surface_request_activate_notify;
+    wl_signal_add(&xwayland_surface->events.request_activate,
+                  &c->xwayland_surface_request_activate_listener);
+
+    c->surface_destroy_listener.notify = surface_destroy_notify;
+    wl_signal_add(&xwayland_surface->events.destroy, &c->surface_destroy_listener);
 }
 
 Atom get_atom(xcb_connection_t *xc, const char *name)
@@ -1831,7 +1774,7 @@ void render_independents(struct wlr_output *o, struct timespec *now)
     struct render_data rdata;
     struct wlr_box geom;
 
-    wl_list_for_each_reverse(c, &server.independents, link)
+    wl_list_for_each_reverse(c, &server.independent_list, client_link)
     {
         geom.x = c->surface.xwayland->x;
         geom.y = c->surface.xwayland->y;
@@ -1847,7 +1790,7 @@ void render_independents(struct wlr_output *o, struct timespec *now)
         rdata.x = c->surface.xwayland->x;
         rdata.y = c->surface.xwayland->y;
 
-        wlr_surface_for_each_surface(c->surface.xwayland->surface, render,
+        wlr_surface_for_each_surface(c->surface.xwayland->surface, render_surface,
                                      &rdata);
     }
 }
@@ -1899,7 +1842,7 @@ struct ewlc_client *get_independent_at_point(double x, double y)
 {
     struct ewlc_client *c;
     struct wlr_box geom;
-    wl_list_for_each_reverse(c, &server.independents, link)
+    wl_list_for_each_reverse(c, &server.independent_list, client_link)
     {
         geom.x = c->surface.xwayland->x;
         geom.y = c->surface.xwayland->y;
@@ -1912,7 +1855,7 @@ struct ewlc_client *get_independent_at_point(double x, double y)
 }
 #endif
 
-void ewlc_setup(void)
+void ewlc_setup(emacs_env *env)
 {
     /* The Wayland display is managed by libwayland. It handles accepting
      * clients from the Unix socket, manging Wayland globals, and so on. */
@@ -1959,10 +1902,10 @@ void ewlc_setup(void)
 
     /* Configure a listener to be notified when new outputs are available on the
      * backend. */
-    wl_list_init(&server.outputs);
-    server.backend_new_output.notify = backend_new_output_notify;
+    wl_list_init(&server.output_list);
+    server.backend_new_output_listener.notify = backend_new_output_notify;
     wl_signal_add(&server.backend->events.new_output,
-                  &server.backend_new_output);
+                  &server.backend_new_output_listener);
 
     /* Set up our client lists and the xdg-shell. The xdg-shell is a
      * Wayland protocol which is used for application windows. For more
@@ -1970,22 +1913,23 @@ void ewlc_setup(void)
      *
      * https://drewdevault.com/2018/07/29/Wayland-shells.html
      */
-    wl_list_init(&server.clients);
-    wl_list_init(&server.focus_stack);
-    wl_list_init(&server.stack);
-    wl_list_init(&server.independents);
+    wl_list_init(&server.client_list);
+    wl_list_init(&server.client_focus_list);
+    wl_list_init(&server.client_stack_list);
+    wl_list_init(&server.independent_list);
 
     server.xdg_shell = wlr_xdg_shell_create(server.display);
-    server.new_xdg_surface.notify = new_xdg_surface_notify;
+    server.xdg_shell_new_surface_listener.notify = xdg_shell_new_surface_notify;
     wl_signal_add(&server.xdg_shell->events.new_surface,
-                  &server.new_xdg_surface);
+                  &server.xdg_shell_new_surface_listener);
 
     /* Use xdg_decoration protocol to negotiate server-side decorations */
     server.xdeco_mgr = wlr_xdg_decoration_manager_v1_create(server.display);
 
-    server.new_xdeco.notify = new_toplevel_decoration_notify;
+    server.xdeco_mgr_new_top_level_decoration_listener.notify =
+        xdeco_mgr_new_toplevel_decoration_notify;
     wl_signal_add(&server.xdeco_mgr->events.new_toplevel_decoration,
-                  &server.new_xdeco);
+                  &server.xdeco_mgr_new_top_level_decoration_listener);
 
     /*
      * Creates a cursor, which is a wlroots utility for tracking the cursor
@@ -2013,18 +1957,18 @@ void ewlc_setup(void)
      * And more comments are sprinkled throughout the notify functions above.
      */
 
-    server.cursor_axis.notify = cursor_axis_notify;
-    server.cursor_button.notify = cursor_button_notify;
-    server.cursor_frame.notify = cursor_frame_notify;
-    server.cursor_motion.notify = cursor_motion_notify;
-    server.cursor_motion_absolute.notify = cursor_motion_absolute_notify;
+    server.cursor_axis_listener.notify = cursor_axis_notify;
+    server.cursor_button_listener.notify = cursor_button_notify;
+    server.cursor_frame_listener.notify = cursor_frame_notify;
+    server.cursor_motion_listener.notify = cursor_motion_notify;
+    server.cursor_motion_absolute_listener.notify = cursor_motion_absolute_notify;
 
-    wl_signal_add(&server.cursor->events.axis, &server.cursor_axis);
-    wl_signal_add(&server.cursor->events.button, &server.cursor_button);
-    wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
-    wl_signal_add(&server.cursor->events.motion, &server.cursor_motion);
+    wl_signal_add(&server.cursor->events.axis, &server.cursor_axis_listener);
+    wl_signal_add(&server.cursor->events.button, &server.cursor_button_listener);
+    wl_signal_add(&server.cursor->events.frame, &server.cursor_frame_listener);
+    wl_signal_add(&server.cursor->events.motion, &server.cursor_motion_listener);
     wl_signal_add(&server.cursor->events.motion_absolute,
-                  &server.cursor_motion_absolute);
+                  &server.cursor_motion_absolute_listener);
 
     /*
      * Configures a seat, which is a single "seat" at which a user sits and
@@ -2032,26 +1976,26 @@ void ewlc_setup(void)
      * pointer, touch, and drawing tablet device. We also rig up a listener to
      * let us know when new input devices are available on the backend.
      */
-    wl_list_init(&server.keyboards);
+    wl_list_init(&server.keyboard_list);
 
-    server.backend_new_input.notify = backend_new_input_notify;
-    wl_signal_add(&server.backend->events.new_input, &server.backend_new_input);
+    server.backend_new_input_listener.notify = backend_new_input_notify;
+    wl_signal_add(&server.backend->events.new_input, &server.backend_new_input_listener);
 
     server.seat = wlr_seat_create(server.display, "seat0");
 
-    server.seat_request_cursor.notify = seat_request_cursor_notify;
+    server.seat_request_set_cursor_listener.notify = seat_request_set_cursor_notify;
     wl_signal_add(&server.seat->events.request_set_cursor,
-                  &server.seat_request_cursor);
+                  &server.seat_request_set_cursor_listener);
 
-    server.seat_request_set_selection.notify =
+    server.seat_request_set_selection_listener.notify =
         seat_request_set_selection_notify;
     wl_signal_add(&server.seat->events.request_set_selection,
-                  &server.seat_request_set_selection);
+                  &server.seat_request_set_selection_listener);
 
-    server.seat_request_set_primary_selection.notify =
+    server.seat_request_set_primary_selection_listener.notify =
         seat_request_set_primary_selection_notify;
     wl_signal_add(&server.seat->events.request_set_primary_selection,
-                  &server.seat_request_set_primary_selection);
+                  &server.seat_request_set_primary_selection_listener);
 
 #ifdef XWAYLAND
     /*
@@ -2061,12 +2005,12 @@ void ewlc_setup(void)
     server.xwayland =
         wlr_xwayland_create(server.display, server.compositor, true);
     if (server.xwayland) {
-        server.xwayland_ready.notify = xwayland_ready_notify;
-        wl_signal_add(&server.xwayland->events.ready, &server.xwayland_ready);
+        server.xwayland_ready_listener.notify = xwayland_ready_notify;
+        wl_signal_add(&server.xwayland->events.ready, &server.xwayland_ready_listener);
 
-        server.new_xwayland_surface.notify = new_xwayland_surface_notify;
+        server.new_xwayland_surface_listener.notify = new_xwayland_surface_notify;
         wl_signal_add(&server.xwayland->events.new_surface,
-                      &server.new_xwayland_surface);
+                      &server.new_xwayland_surface_listener);
 
         setenv("DISPLAY", server.xwayland->display_name, true);
     } else {
@@ -2076,17 +2020,19 @@ void ewlc_setup(void)
 #endif
 }
 
-void ewlc_start()
+void ewlc_start(emacs_env *env)
 {
     const char *socket;
     char startup_cmd[] = "alacritty";
+
+    server.e_env = env;
 
     // Wayland requires XDG_RUNTIME_DIR for creating its communications
     // socket
     if (!getenv("XDG_RUNTIME_DIR"))
         ERROR("XDG_RUNTIME_DIR must be set");
 
-    ewlc_setup();
+    ewlc_setup(env);
 
     server.startup_pid = -1;
 
@@ -2125,11 +2071,14 @@ void ewlc_start()
         execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
         EERROR("startup: execl");
     }
-    // wl_display_run(server.display);
+
+    e_message(server.e_env, "ewlc_start: leaving");
 }
 
 int ewlc_cleanup(void)
 {
+    e_message(server.e_env, "ewlc_cleanup: enter");
+
     if (server.startup_pid != -1) {
         kill(server.startup_pid, SIGTERM);
         waitpid(server.startup_pid, NULL, 0);
