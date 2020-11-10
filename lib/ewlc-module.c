@@ -2,6 +2,7 @@
 #include "ewlc.h"
 #include <emacs-module.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 emacs_value Qt;
 emacs_value Qnil;
@@ -10,6 +11,11 @@ emacs_value Fewlc_apply_keybinding;
 /* Declare mandatory GPL symbol.  */
 int plugin_is_GPL_compatible;
 
+int string_bytes(emacs_env *env, emacs_value string) {
+  ptrdiff_t size = 0;
+  env->copy_string_contents(env, string, NULL, &size);
+  return size;
+}
 static emacs_value Fewlc_start(emacs_env *env, ptrdiff_t nargs,
                                emacs_value args[], void *data)
 {
@@ -51,8 +57,16 @@ static emacs_value Fewlc_set_master_ratio(emacs_env *env, ptrdiff_t nargs,
 static emacs_value Fewlc_focus_output(emacs_env *env, ptrdiff_t nargs,
                                       emacs_value args[], void *data)
 {
-    integer direction = env->extract_integer(env, args[0]);
+    int direction = env->extract_integer(env, args[0]);
     ewlc_focus_output(direction);
+    return Qt;
+}
+
+static emacs_value Fewlc_chvt(emacs_env *env, ptrdiff_t nargs,
+                              emacs_value args[], void *data)
+{
+    int nbr = env->extract_integer(env, args[0]);
+    ewlc_chvt(nbr);
     return Qt;
 }
 
@@ -71,6 +85,28 @@ static emacs_value Fewlc_next_master(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
+static emacs_value Fewlc_spawn(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    ptrdiff_t len;
+    char *cmd, **cmd_args;
+
+    len = string_bytes(env, args[0]);
+    cmd = malloc(sizeof(char) * len);
+    env->copy_string_contents(env, args[0], cmd, &len);
+    if (nargs > 1) {
+        len = string_bytes(env, args[1]);
+        cmd_args = malloc(sizeof(char*));
+        cmd_args[0] = malloc(sizeof(char) * len);
+        env->copy_string_contents(env, args[1], cmd_args[0], &len);
+    }
+    ewlc_spawn(cmd, cmd_args);
+    free(cmd);
+    // FIXME: this is a mess, is wrong, and leaks.
+    if (nargs > 1) free(cmd_args);
+    return Qt;
+}
+
 static emacs_value Fewlc_kill_client(emacs_env *env, ptrdiff_t nargs,
                                      emacs_value args[], void *data)
 {
@@ -82,6 +118,13 @@ static emacs_value Fewlc_toggle_floating(emacs_env *env, ptrdiff_t nargs,
                                          emacs_value args[], void *data)
 {
     ewlc_toggle_floating();
+    return Qt;
+}
+
+static emacs_value Fewlc_view(emacs_env *env, ptrdiff_t nargs,
+                              emacs_value args[], void *data)
+{
+    ewlc_view();
     return Qt;
 }
 
@@ -171,10 +214,17 @@ int emacs_module_init(struct emacs_runtime *ert)
                               "focus output.", NULL);
     bind_function(env, "ewlc-focus-output", func);
 
-    func = env->make_function(env, 1, 1, Fewlc_view,
+    func = env->make_function(env, 0, 0, Fewlc_view,
                               "view.", NULL);
     bind_function(env, "ewlc-view", func);
 
+    func = env->make_function(env, 1, 2, Fewlc_spawn,
+                              "Spawn a command.", NULL);
+    bind_function(env, "ewlc-spawn", func);
+
+    func = env->make_function(env, 1, 1, Fewlc_chvt,
+                              "Change VT.", NULL);
+    bind_function(env, "ewlc-chvt", func);
     //  Fewlc_apply_keybinding = env->intern(env, "ewlc-apply-keybinding");
 
     /* func = env->make_function(env, 2, 2, Fewlc_apply_keybinding, */

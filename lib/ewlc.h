@@ -14,6 +14,8 @@ void ewlc_view();
 void ewlc_toggle_floating();
 void ewlc_focus_output(int direction);
 void ewlc_next_master(int direction);
+void ewlc_spawn(char *cmd, char *args[]);
+void ewlc_chvt(int nbr);
 int ewlc_cleanup();
 
 #endif // __EWLC_H_
