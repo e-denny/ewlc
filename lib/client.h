@@ -5,45 +5,17 @@
 #define __CLIENT_H_
 
 #define _POSIX_C_SOURCE 200809L
-#include "ewlc.h"
-#include "ewlc-module.h"
+#include "server.h"
+#include "client.h"
+#include "module.h"
 #include <emacs-module.h>
-#include <getopt.h>
-#include <linux/input-event-codes.h>
-#include <signal.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/wait.h>
 #include <time.h>
-#include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h>
-#include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_compositor.h>
-#include <wlr/types/wlr_cursor.h>
-#include <wlr/types/wlr_data_device.h>
-#include <wlr/types/wlr_export_dmabuf_v1.h>
-#include <wlr/types/wlr_gamma_control_v1.h>
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <wlr/types/wlr_matrix.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_pointer.h>
-#include <wlr/types/wlr_primary_selection.h>
-#include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_screencopy_v1.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_viewporter.h>
-#include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
-#include <wlr/types/wlr_xdg_output_v1.h>
-#include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
+#include <wlr/types/wlr_surface.h>
 
 #ifdef XWAYLAND
 #include <X11/Xlib.h>
@@ -51,14 +23,6 @@
 #endif
 
 #ifdef XWAYLAND
-enum {
-    NetWMWindowTypeDialog,
-    NetWMWindowTypeSplash,
-    NetWMWindowTypeToolbar,
-    NetWMWindowTypeUtility,
-    NetLast
-}; /* EWMH atoms */
-
 enum { XDG_SHELL, X11_MANAGED, X11_UNMANAGED }; /* client types */
 #endif
 
@@ -91,36 +55,43 @@ struct ewlc_client {
     uint32_t resize; /* configure serial of a pending resize */
 };
 
-static struct wlr_surface *get_surface(struct ewlc_client *c);
-static bool is_visible_on(struct ewlc_client *c, struct ewlc_output *o);
-static void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox);
-static void xdg_surface_commit_notify(struct wl_listener *listener, void *data);
-static void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data);
-static void surface_destroy_notify(struct wl_listener *listener, void *data);
-static void focus_client(struct ewlc_client *old, struct ewlc_client *c,
-                         int lift);
-static struct ewlc_client *focus_top(struct ewlc_output *o);
-static void surface_map_notify(struct wl_listener *listener, void *data);
-static void render_surface(struct wlr_surface *surface, int sx, int sy, void *data);
-static void render_clients(struct ewlc_output *o, struct timespec *now);
-static void resize(struct ewlc_client *c, int x, int y, int w, int h,
-                   int interact);
-static struct ewlc_client *get_active_client(void);
-static void set_floating(struct ewlc_client *c, int floating);
-static void set_output(struct ewlc_client *c, struct ewlc_output *o);
-static void surface_unmap_notify(struct wl_listener *listener, void *data);
-static struct ewlc_client *get_client_at_point(double x, double y);
-static void apply_title(struct ewlc_client *c);
+/* Used to move all of the data necessary to render a surface from the top-level
+ * frame handler to the per-surface render function. */
+struct render_data {
+    struct wlr_output *output;
+    struct ewlc_client *client;
+    struct timespec *when;
+    int x, y; /* layout-relative */
+};
+
+struct wlr_surface *get_surface(struct ewlc_client *c);
+bool is_visible_on(struct ewlc_client *c, struct ewlc_output *o);
+void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox);
+void xdg_surface_commit_notify(struct wl_listener *listener, void *data);
+void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data);
+void surface_destroy_notify(struct wl_listener *listener, void *data);
+void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift);
+struct ewlc_client *focus_top(struct ewlc_output *o);
+void surface_map_notify(struct wl_listener *listener, void *data);
+void render_surface(struct wlr_surface *surface, int sx, int sy, void *data);
+void render_clients(struct ewlc_output *o, struct timespec *now);
+void resize(struct ewlc_client *c, int x, int y, int w, int h, int interact);
+struct ewlc_client *get_active_client(struct ewlc_server *s);
+void set_floating(struct ewlc_client *c, int floating);
+void set_output(struct ewlc_client *c, struct ewlc_output *o);
+void surface_unmap_notify(struct wl_listener *listener, void *data);
+struct ewlc_client *get_client_at_point(struct ewlc_server *s, double x, double y);
+void apply_title(struct ewlc_client *c, struct ewlc_output *active_output);
+void scale_box(struct wlr_box *box, float scale);
 
 #ifdef XWAYLAND
-static void xwayland_surface_request_activate_notify(struct wl_listener *listener,
-                                                     void *data);
-static void new_xwayland_surface_notify(struct wl_listener *listener,
-                                        void *data);
-static void render_independents(struct wlr_output *output,
-                                struct timespec *now);
-static void xwayland_ready_notify(struct wl_listener *listener, void *data);
-static struct ewlc_client *get_independent_at_point(double x, double y);
+void xwayland_surface_request_activate_notify(struct wl_listener *listener,
+                                              void *data);
+void new_xwayland_surface_notify(struct wl_listener *listener, void *data);
+void render_independents(struct ewlc_server *s, struct wlr_output *output,
+                         struct timespec *now);
+struct ewlc_client *get_independent_at_point(struct ewlc_server *s,double x, double y);
+Atom get_atom(xcb_connection_t *xc, const char *name);
 #endif
 
 #endif // __CLIENT_H_

@@ -3,10 +3,10 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include "util.h"
+#include "server.h"
 #include "client.h"
-
-#include "ewlc.h"
-#include "ewlc-module.h"
+#include "output.h"
+#include "module.h"
 #include <emacs-module.h>
 #include <getopt.h>
 #include <linux/input-event-codes.h>
@@ -85,10 +85,12 @@ void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox)
         c->geom.y = bbox->y;
 }
 
-void apply_title(struct ewlc_client *c)
+void apply_title(struct ewlc_client *c, struct ewlc_output *active_output)
 {
     const char *appid, *title;
+    struct ewlc_server *s = c->server;
 
+    INFO("into");
     /* rule matching */
 #ifdef XWAYLAND
     if (c->type != XDG_SHELL) {
@@ -102,11 +104,12 @@ void apply_title(struct ewlc_client *c)
         title = c->surface.xdg->toplevel->title;
     }
     if (!appid)
-        appid = broken;
+        appid = s->broken;
     if (!title)
-        title = broken;
+        title = s->broken;
 
     set_output(c, active_output);
+    INFO("leaving");
 }
 
 void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
@@ -118,24 +121,25 @@ void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
         c->resize = 0;
 }
 
+// TODO: assign an output to a new client?
 void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised when wlr_xdg_shell receives a new xdg surface from a
      * client, either a toplevel (application window) or popup. */
     struct wlr_xdg_surface *xdg_surface = data;
     struct ewlc_client *c;
-    struct ewlc_server *serv;
+    struct ewlc_server *s;
 
     if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL)
         return;
 
-    serv = wl_container_of(listener, serv, xdg_shell_new_surface_listener);
+    s = wl_container_of(listener, s, xdg_shell_new_surface_listener);
 
     /* Allocate a Client for this surface */
     c = xdg_surface->data = calloc(1, sizeof(*c));
     c->surface.xdg = xdg_surface;
-    c->server = serv;
-    c->border_width = border_px;
+    c->server = s;
+    c->border_width = s->border_px;
 
     /* Tell the client not to try anything fancy */
     wlr_xdg_toplevel_set_tiled(c->surface.xdg, WLR_EDGE_TOP | WLR_EDGE_BOTTOM |
@@ -143,7 +147,6 @@ void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
                                                    WLR_EDGE_RIGHT);
 
     /* Listen to the various events it can emit */
-    /* FIXME: this this 'notify' funvtion correct? */
     c->surface_commit_listener.notify = xdg_surface_commit_notify;
     wl_signal_add(&xdg_surface->surface->events.commit, &c->surface_commit_listener);
 
@@ -190,11 +193,12 @@ void surface_map_notify(struct wl_listener *listener, void *data)
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct ewlc_client *c = wl_container_of(listener, c, surface_map_listener);
     struct ewlc_server *s = c->server;
+    fprintf(stderr, "into: surface_map_notify\n");
 
 #ifdef XWAYLAND
     if (c->type == X11_UNMANAGED) {
         /* Insert this independent into independents lists. */
-        wl_list_insert(&server.independent_list, &c->client_link);
+        wl_list_insert(&s->independent_list, &c->client_link);
         return;
     }
 #endif
@@ -219,42 +223,14 @@ void surface_map_notify(struct wl_listener *listener, void *data)
     }
 
     /* Set initial output, floating status, and focus */
-    apply_title(c);
-}
-
-void move_resize(const Arg *arg)
-{
-    server.grabbed_client =
-        get_client_at_point(server.cursor->x, server.cursor->y);
-    if (!server.grabbed_client)
-        return;
-
-    /* Float the window and tell motionnotify to grab it */
-    set_floating(server.grabbed_client, 1);
-    switch (server.cursor_mode = arg->ui) {
-    case CUR_MOVE:
-        server.grabc_x = server.cursor->x - server.grabbed_client->geom.x;
-        server.grabc_y = server.cursor->y - server.grabbed_client->geom.y;
-        wlr_xcursor_manager_set_cursor_image(server.cursor_mgr, "fleur",
-                                             server.cursor);
-        break;
-    case CUR_RESIZE:
-        /* Doesn't work for X11 output - the next absolute motion event
-         * returns the cursor to where it started */
-        wlr_cursor_warp_closest(
-            server.cursor, NULL,
-            server.grabbed_client->geom.x + server.grabbed_client->geom.width,
-            server.grabbed_client->geom.y + server.grabbed_client->geom.height);
-        wlr_xcursor_manager_set_cursor_image(
-            server.cursor_mgr, "bottom_right_corner", server.cursor);
-        break;
-    }
+    apply_title(c, s->active_output);
+    fprintf(stderr, "leaving: surface_map_notify\n");
 }
 
 void pointer_focus(struct ewlc_client *c, struct wlr_surface *surface,
                    double sx, double sy, uint32_t time)
 {
-    ewlc_server *s = c->server;
+    struct ewlc_server *s = c->server;
 
     /* Use top level surface if nothing more specific given */
     if (c && !surface)
@@ -276,13 +252,13 @@ void pointer_focus(struct ewlc_client *c, struct wlr_surface *surface,
      * of its surfaces, and make keyboard focus follow if desired. */
     wlr_seat_pointer_notify_enter(s->seat, surface, sx, sy);
 
-#if XWAYLAND
+#ifdef XWAYLAND
     if (c->type == X11_UNMANAGED)
         return;
 #endif
 
-    if (sloppyfocus)
-        focus_client(get_active_client(), c, 0);
+    if (s->sloppyfocus)
+        focus_client(get_active_client(s), c, 0);
 }
 
 void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
@@ -290,6 +266,8 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
     /* This function is called for every surface that needs to be rendered. */
     struct render_data *rdata = data;
     struct wlr_output *output = rdata->output;
+    struct ewlc_client *c = rdata->client;
+    struct ewlc_server *s = c->server;
     double ox = 0, oy = 0;
     struct wlr_box obox;
     float matrix[9];
@@ -308,7 +286,7 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
      * displays, one next to the other, both 1080p, a client on the rightmost
      * display might have layout coordinates of 2000,100. We need to translate
      * that to output-local coordinates, or (2000 - 1920). */
-    wlr_output_layout_output_coords(server.output_layout, output, &ox, &oy);
+    wlr_output_layout_output_coords(s->output_layout, output, &ox, &oy);
 
     /* We also have to apply the scale factor for HiDPI outputs. This is only
      * part of the puzzle, ewlc does not fully support HiDPI. */
@@ -335,7 +313,7 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
 
     /* This takes our matrix, the texture, and an alpha, and performs the actual
      * rendering on the GPU. */
-    wlr_render_texture_with_matrix(server.renderer, texture, matrix, 1);
+    wlr_render_texture_with_matrix(s->renderer, texture, matrix, 1);
 
     /* This lets the client know that we've displayed that frame and it can
      * prepare another one now if it likes. */
@@ -344,11 +322,11 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
 
 void render_clients(struct ewlc_output *o, struct timespec *now)
 {
-    struct ewlc_client *c, *active_c = get_active_client();
     struct ewlc_server *s = o->server;
+    struct ewlc_client *c, *active_c = get_active_client(s);
     const float *color;
     double ox, oy;
-    int i, w, h;
+    int i, w, h, bw;
     struct render_data rdata;
     struct wlr_box *borders;
     struct wlr_surface *surface;
@@ -366,21 +344,22 @@ void render_clients(struct ewlc_output *o, struct timespec *now)
         surface = get_surface(c);
         ox = c->geom.x;
         oy = c->geom.y;
+
         wlr_output_layout_output_coords(s->output_layout, o->wlr_output,
                                         &ox, &oy);
         w = surface->current.width;
         h = surface->current.height;
+        bw = c->border_width;
+
         borders = (struct wlr_box[4]){
-            {ox, oy, w + 2 * c->border_width, c->border_width}, /* top */
-            {ox, oy + c->border_width, c->border_width, h},     /* left */
-            {ox + c->border_width + w, oy + c->border_width, c->border_width,
-             h}, /* right */
-            {ox, oy + c->border_width + h, w + 2 * c->border_width,
-             c->border_width}, /* bottom */
+            {ox,          oy,          w + 2 * bw, bw}, /* top */
+            {ox,          oy + bw,     bw,         h},  /* left */
+            {ox + bw + w, oy + bw,     bw,         h},  /* right */
+            {ox,          oy + bw + h, w + 2 * bw, bw}, /* bottom */
         };
 
         /* Draw window borders */
-        color = (c == active_c) ? focus_color : border_color;
+        color = (c == active_c) ? s->focus_color : s->border_color;
         for (i = 0; i < 4; i++) {
             scale_box(&borders[i], o->wlr_output->scale);
             wlr_render_rect(s->renderer, &borders[i], color,
@@ -390,12 +369,14 @@ void render_clients(struct ewlc_output *o, struct timespec *now)
         /* This calls our render function for each surface among the
          * xdg_surface's toplevel and popups. */
         rdata.output = o->wlr_output;
+        rdata.client = c;
         rdata.when = now;
         rdata.x = c->geom.x + c->border_width;
         rdata.y = c->geom.y + c->border_width;
 #ifdef XWAYLAND
         if (c->type != XDG_SHELL)
-            wlr_surface_for_each_surface(c->surface.xwayland->surface, render_surface,
+            wlr_surface_for_each_surface(c->surface.xwayland->surface,
+                                         render_surface,
                                          &rdata);
         else
 #endif
@@ -410,7 +391,7 @@ void resize(struct ewlc_client *c, int x, int y, int w, int h, int interact)
      * compositor, you'd wait for the client to prepare a buffer at
      * the new size, then commit any movement that was prepared.
      */
-    struct ewlc_server s = c->server;
+    struct ewlc_server *s = c->server;
     struct wlr_box *bbox = interact ? &s->output_geom : &c->output->w;
 
     c->geom.x = x;
@@ -441,12 +422,12 @@ void scale_box(struct wlr_box *box, float scale)
     box->height *= scale;
 }
 
-struct ewlc_client *get_active_client(void)
+struct ewlc_client *get_active_client(struct ewlc_server *s)
 {
-    struct ewlc_client *c = wl_container_of(server.client_focus_list.next,
+    struct ewlc_client *c = wl_container_of(s->client_focus_list.next,
                                             c,
                                             client_focus_link);
-    if (wl_list_empty(&server.client_focus_list) || !is_visible_on(c, active_output))
+    if (wl_list_empty(&s->client_focus_list) || !is_visible_on(c, s->active_output))
         return NULL;
     return c;
 }
@@ -462,24 +443,41 @@ void set_floating(struct ewlc_client *c, int floating)
 void set_output(struct ewlc_client *c, struct ewlc_output *o)
 {
     struct ewlc_output *old_output = c->output;
-    struct ewlc_client *old_c = get_active_client();
+    struct ewlc_server *s = c->server;
+    struct ewlc_client *old_c = get_active_client(s);
+    struct ewlc_client *c_new;
+    INFO("enter");
+    DEBUG("c = '%p'", c);
+    DEBUG("old_output = '%p'", old_output);
+    DEBUG("s = '%p'", s);
+    DEBUG("old_c = '%p'", old_c);
 
-    if (old_output == o)
+    if (old_output == o) {
+        fprintf(stderr, "return-1: set_output\n");
         return;
+    }
     c->output = o;
+    INFO("check");
 
     /* XXX leave/enter is not optimal but works */
     if (old_output) {
         wlr_surface_send_leave(get_surface(c), old_output->wlr_output);
         arrange(old_output);
     }
+    INFO("check");
+
     if (o) {
         /* Make sure window actually overlaps with the output */
         apply_bounds(c, &o->m);
         wlr_surface_send_enter(get_surface(c), o->wlr_output);
         arrange(o);
     }
-    focus_client(old_c, focus_top(active_output), 1);
+    INFO("check");
+    DEBUG("s->active_output = '%p'", s->active_output);
+    c_new = focus_top(s->active_output);
+    DEBUG("c_new = '%p'", c_new);
+    focus_client(old_c, c_new, 1);
+    INFO("leaving");
 }
 
 void surface_unmap_notify(struct wl_listener *listener, void *data)
@@ -496,13 +494,13 @@ void surface_unmap_notify(struct wl_listener *listener, void *data)
     wl_list_remove(&c->client_stack_link);
 }
 
-struct ewlc_client *get_client_at_point(double x, double y)
+struct ewlc_client *get_client_at_point(struct ewlc_server *s, double x, double y)
 {
     /* Find the topmost visible client (if any) at point (x, y), including
      * borders. This relies on stack being ordered from top to bottom. */
     struct ewlc_client *c;
 
-    wl_list_for_each(c, &server.client_stack_list, client_stack_link)
+    wl_list_for_each(c, &s->client_stack_list, client_stack_link)
         if (is_visible_on(c, c->output) &&
             wlr_box_contains_point(&c->geom, x, y))
             return c;
@@ -510,7 +508,69 @@ struct ewlc_client *get_client_at_point(double x, double y)
     return NULL;
 }
 
+void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
+{
+    struct ewlc_server *s;
+    struct wlr_keyboard *kb;
+    INFO("into");
+    DEBUG("c = '%p'", c);
+    DEBUG("old = '%p'", old);
+    s = c->server;
+    DEBUG("s = '%p'", s);
+    DEBUG("s->seat = '%p'", s->seat);
+    kb = wlr_seat_get_keyboard(s->seat);
+    DEBUG("kb = '%p'", kb);
+    /* Raise client in stacking order if requested */
+    if (c && lift) {
+        wl_list_remove(&c->client_stack_link);
+        wl_list_insert(&s->client_stack_list, &c->client_stack_link);
+    }
+
+    /* Nothing else to do? */
+    if (c == old) {
+        INFO("return-1");
+        return;
+    }
+
+    /* Deactivate old client if focus is changing */
+    if (c != old && old) {
 #ifdef XWAYLAND
+        if (old->type != XDG_SHELL)
+            wlr_xwayland_surface_activate(old->surface.xwayland, 0);
+        else
+#endif
+            wlr_xdg_toplevel_set_activated(old->surface.xdg, 0);
+    }
+
+    /* Update wlroots' keyboard focus */
+    if (!c) {
+        /* With no client, all we have left is to clear focus */
+        wlr_seat_keyboard_notify_clear_focus(s->seat);
+        INFO("return-2");
+        return;
+    }
+
+    /* Have a client, so focus its top-level wlr_surface */
+    wlr_seat_keyboard_notify_enter(s->seat, get_surface(c), kb->keycodes,
+                                   kb->num_keycodes, &kb->modifiers);
+
+    /* Put the new client atop the focus stack and select its output */
+    wl_list_remove(&c->client_focus_link);
+    wl_list_insert(&s->client_focus_list, &c->client_focus_link);
+    s->active_output = c->output;
+
+    /* Activate the new client */
+#ifdef XWAYLAND
+    if (c->type != XDG_SHELL)
+        wlr_xwayland_surface_activate(c->surface.xwayland, 1);
+    else
+#endif
+        wlr_xdg_toplevel_set_activated(c->surface.xdg, 1);
+    INFO("leaving");
+}
+
+#ifdef XWAYLAND
+
 void xwayland_surface_request_activate_notify(struct wl_listener *listener, void *data)
 {
     struct ewlc_client *c = wl_container_of(listener, c,
@@ -525,12 +585,13 @@ void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_xwayland_surface *xwayland_surface = data;
     struct ewlc_client *c;
+    struct ewlc_server *s = wl_container_of(listener, s, new_xwayland_surface_listener);
 
     /* Allocate a struct ewlc_client for this surface */
     c = xwayland_surface->data = calloc(1, sizeof(*c));
     c->surface.xwayland = xwayland_surface;
     c->type = xwayland_surface->override_redirect ? X11_UNMANAGED : X11_MANAGED;
-    c->border_width = border_px;
+    c->border_width = s->border_px;
 
     /* Listen to the various events it can emit */
     c->surface_map_listener.notify = surface_map_notify;
@@ -562,13 +623,13 @@ Atom get_atom(xcb_connection_t *xc, const char *name)
     return atom;
 }
 
-void render_independents(struct wlr_output *o, struct timespec *now)
+void render_independents(struct ewlc_server *s, struct wlr_output *o, struct timespec *now)
 {
     struct ewlc_client *c;
     struct render_data rdata;
     struct wlr_box geom;
 
-    wl_list_for_each_reverse(c, &server.independent_list, client_link)
+    wl_list_for_each_reverse(c, &s->independent_list, client_link)
     {
         geom.x = c->surface.xwayland->x;
         geom.y = c->surface.xwayland->y;
@@ -576,11 +637,12 @@ void render_independents(struct wlr_output *o, struct timespec *now)
         geom.height = c->surface.xwayland->height;
 
         /* Only render visible clients which show on this output */
-        if (!wlr_output_layout_intersects(server.output_layout, o, &geom))
+        if (!wlr_output_layout_intersects(s->output_layout, o, &geom))
             continue;
 
         rdata.output = o;
         rdata.when = now;
+        rdata.client = c;
         rdata.x = c->surface.xwayland->x;
         rdata.y = c->surface.xwayland->y;
 
@@ -589,16 +651,17 @@ void render_independents(struct wlr_output *o, struct timespec *now)
     }
 }
 
-struct ewlc_client *get_independent_at_point(double x, double y)
+struct ewlc_client *get_independent_at_point(struct ewlc_server *s, double x, double y)
 {
     struct ewlc_client *c;
     struct wlr_box geom;
-    wl_list_for_each_reverse(c, &server.independent_list, client_link)
+    wl_list_for_each_reverse(c, &s->independent_list, client_link)
     {
         geom.x = c->surface.xwayland->x;
         geom.y = c->surface.xwayland->y;
         geom.width = c->surface.xwayland->width;
         geom.height = c->surface.xwayland->height;
+
         if (wlr_box_contains_point(&geom, x, y))
             return c;
     }

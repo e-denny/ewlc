@@ -1,7 +1,10 @@
 #include "util.h"
-
+#include <stdlib.h>
+#include <wlr/types/wlr_keyboard.h>
+#include <xkbcommon/xkbcommon.h>
 
 struct key_node *create_node(uint32_t mods, xkb_keysym_t sym,
+
                              struct ewlc_keyboard *kb,
                              struct wlr_event_keyboard_key *event)
 {

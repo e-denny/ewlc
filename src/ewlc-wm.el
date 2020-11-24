@@ -27,44 +27,46 @@
 
 (defvar *ewlc-running* nil "Is the wayland compositor running?")
 
+(defvar *ewlc-server* nil "The wayland compositor server.")
+
 (defvar ewlc-keymap-prefix "C-," "The ewlc keymap prefix.")
 
 (defun wc-focus-next-client ()
   "Focus next client."
-  (ewlc-focus-next-client 1))
+  (ewlc-focus-next-client *ewlc-server* 1))
 
 (defun wc-focus-prev-client ()
   "Focus previous client."
-  (ewlc-focus-next-client -1))
+  (ewlc-focus-next-client *ewlc-server* -1))
 
 (defun wc-next-master ()
   "Next-master."
-  (ewlc-next-master 1))
+  (ewlc-next-master *ewlc-server* 1))
 
 (defun wc-prev-master ()
   "Prev master."
-  (ewlc-next-master -1))
+  (ewlc-next-master *ewlc-server* -1))
 
 (defun wc-incr-master-ratio ()
   "Inrement master ratio."
-  (ewlc-set-master-ratio 0.05))
+  (ewlc-set-master-ratio *ewlc-server* 0.05))
 
 (defun wc-decr-master-ratio ()
   "Decrement master ratio."
-  (ewlc-set-master-ratio -0.05))
+  (ewlc-set-master-ratio *ewlc-server* -0.05))
 
 (defun wc-kill-client ()
   "Kill the active client."
-  (ewlc-kill-client))
+  (ewlc-kill-client *ewlc-server*))
 
 (defun exit-wc ()
   "Exit the wayland compositor."
-  (ewlc-cleanup)
+  (ewlc-cleanup *ewlc-server*)
   (setq *ewlc-running* nil))
 
 (defun wc-quit ()
   "Kill the window manager."
-  (ewlc-quit)
+  (ewlc-quit *ewlc-server*)
   (exit-wm))
 
 (defvar ewlc-command-map
@@ -92,29 +94,32 @@
 ;;   :keymap ewlc-keymap-prefix
 ;;   :global defun)
 
-(defun start-wc-old()
+(defun start-wc ()
   "Start the wayland compositor."
-  (ewlc-start)
+  (setq *ewlc-server* (ewlc-start))
   (setq *ewlc-running* t)
   (setq *ewlc-thread* (make-thread
                        (lambda ()
                          (while *ewlc-running*
                            ;; dispatch queued wayland events.
-                           (ewlc-display-dispatch)
-                           (ewlc-handle-keybindings)
+                           (ewlc-display-dispatch *ewlc-server*)
+                           (ewlc-handle-keybindings *ewlc-server*)
                            (sleep-for 0.01)))
                        "loop-thread")))
 
 
 (defun wm-loop ()
-  (ewlc-display-dispatch)
-  (ewlc-handle-keybindings))
+  "Dispatch wayland events."
+  (ewlc-display-dispatch *ewlc-server*)
+  (ewlc-handle-keybindings *ewlc-server*))
 
-(defun start-wc()
+(defun start-wc-new()
   "Start the wayland compositor."
-  (ewlc-start)
+  (setq *ewlc-server* (ewlc-start))
   (setq *ewlc-running* t)
-  (run-at-time 0 0.01 #'wm-loop))
+  (ewlc-display-dispatch *ewlc-server*)
+  (run-at-time 0 0.01 #'wm-loop)
+  )
 
 (defun ewlc-apply-keybinding (mod key)
   "Apply the keybings for MOD and KEY."

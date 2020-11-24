@@ -1,4 +1,4 @@
-;;; run.el --- description -*- lexical-binding: t; -*-
+;;;.el --- description -*- lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 2020 Edgar Denny
 ;;

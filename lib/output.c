@@ -2,9 +2,11 @@
  See LICENSE file for copyright and license details.
  */
 #define _POSIX_C_SOURCE 200809L
+#include "server.h"
 #include "util.h"
-#inclide "output.h"
-#include <linux/input-event-codes.h>
+#include "client.h"
+#include "output.h"
+// #include <linux/input-event-codes.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,16 +14,16 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <time.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h>
-#include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_compositor.h>
-#include <wlr/types/wlr_cursor.h>
-#include <wlr/types/wlr_data_device.h>
-#include <wlr/types/wlr_export_dmabuf_v1.h>
-#include <wlr/types/wlr_gamma_control_v1.h>
+/* #include <wlr/backend.h> */
+/* #include <wlr/render/wlr_renderer.h> */
+/* #include <wlr/types/wlr_compositor.h> */
+/* #include <wlr/types/wlr_cursor.h> */
+/* #include <wlr/types/wlr_data_device.h> */
+/* #include <wlr/types/wlr_export_dmabuf_v1.h> */
+/* #include <wlr/types/wlr_gamma_control_v1.h> */
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_matrix.h>
@@ -34,7 +36,7 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
+// #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
@@ -45,11 +47,10 @@
 #include <wlr/xwayland.h>
 #endif
 
-// ok
 void arrange(struct ewlc_output *o)
 {
     /* Get effective output geometry to use for window area */
-    ewlc_server *s = o->server;
+    struct ewlc_server *s = o->server;
 
     o->m = *wlr_output_layout_get_box(s->output_layout, o->wlr_output);
     o->w = o->m;
@@ -57,19 +58,16 @@ void arrange(struct ewlc_output *o)
     /* XXX recheck pointer focus here... or in resize()? */
 }
 
-// ok
 void output_destroy_notify(struct wl_listener *listener, void *data)
 {
     // struct wlr_output *wlr_output = data;
     // struct ewlc_output *o = wlr_output->data;
-    struct ewlc_output *o = wl_container_of(listener, o, output_destroy_listner);
+    struct ewlc_output *o = wl_container_of(listener, o, output_destroy_listener);
 
     wl_list_remove(&o->output_destroy_listener.link);
     free(o);
 }
 
-
-// ok
 void backend_new_output_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the backend when a new output (aka a display or
@@ -77,7 +75,15 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
     struct ewlc_server *s = wl_container_of(listener, s, backend_new_output_listener);
     struct wlr_output *wlr_output = data;
     struct ewlc_output *o;
-    const struct ewlc_output_rule *r;
+    struct ewlc_output_rule *r;
+    struct ewlc_output_rule output_rules[] = {
+        /* name       master_ratio num_master scale  rotate/reflect */
+        /* example of a HiDPI laptop monitor:
+           { "eDP-1",    0.5,  1,      2,    WL_OUTPUT_TRANSFORM_NORMAL },
+        */
+        /* defaults */
+        {NULL, 0.5, 1, 1, WL_OUTPUT_TRANSFORM_NORMAL},
+    };
 
     /* The mode is a tuple of (width, height, refresh rate), and each
      * output supports only a specific set of modes. We just pick the
@@ -95,7 +101,7 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
             o->master_ratio = r->master_ratio;
             o->num_master = r->num_master;
             wlr_output_set_scale(wlr_output, r->scale);
-            wlr_xcursor_manager_load(serv->cursor_mgr, r->scale);
+            wlr_xcursor_manager_load(s->cursor_mgr, r->scale);
             wlr_output_set_transform(wlr_output, r->rr);
             break;
         }
@@ -122,27 +128,28 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
      * output (such as DPI, scale factor, manufacturer, etc).
      */
     wlr_output_layout_add_auto(s->output_layout, wlr_output);
-    serv->output_geom = *wlr_output_layout_get_box(s->output_layout, NULL);
+    s->output_geom = *wlr_output_layout_get_box(s->output_layout, NULL);
 }
 
-// ok - FIXME: changed parameters - also need active output
-// FIXME: also add active_output to 'ewlc_server'
-struct ewlc_output *get_next_output(int direction, ewlc_server *s)
+struct ewlc_output *set_next_output(int direction, struct ewlc_server *s)
 {
     struct ewlc_output *o;
 
     if (direction > 0) {
-        if (s->active_output->output_link.next == &s->output_list)
-            return wl_container_of(s->output_list.next, o, output_link);
-        return wl_container_of(s->active_output->output_link.next, o, output_link);
+        if (s->active_output->output_link.next == &s->output_list) {
+            o = wl_container_of(s->output_list.next, o, output_link);
+        }
+        o = wl_container_of(s->active_output->output_link.next, o, output_link);
     } else {
-        if (s->active_output->output_link.prev == &s->output_list)
-            return wl_container_of(s->output_list.prev, o, output_link);
-        return wl_container_of(s->active_output->output_link.prev, o, output_link);
+        if (s->active_output->output_link.prev == &s->output_list) {
+            o = wl_container_of(s->output_list.prev, o, output_link);
+        }
+        o = wl_container_of(s->active_output->output_link.prev, o, output_link);
     }
+    s->active_output = o;
+    return o;
 }
 
-// ok
 void output_frame_notify(struct wl_listener *listener, void *data)
 {
     struct ewlc_client *c;
@@ -175,11 +182,11 @@ void output_frame_notify(struct wl_listener *listener, void *data)
          */
         wlr_renderer_begin(s->renderer, o->wlr_output->width,
                            o->wlr_output->height);
-        wlr_renderer_clear(s->renderer, root_color);
+        wlr_renderer_clear(s->renderer, s->root_color);
 
         render_clients(o, &now);
 #ifdef XWAYLAND
-        render_independents(o->wlr_output, &now);
+        render_independents(s, o->wlr_output, &now);
 #endif
 
         /* Hardware cursors are rendered by the GPU on a separate plane, and can
@@ -200,7 +207,6 @@ void output_frame_notify(struct wl_listener *listener, void *data)
     wlr_output_commit(o->wlr_output);
 }
 
-// ok
 void tile(struct ewlc_output *o)
 {
     unsigned int i = 0, n = 0, h, mw, my = 0, ty = 0;
@@ -236,7 +242,6 @@ void tile(struct ewlc_output *o)
     }
 }
 
-// ok
 struct ewlc_output *get_output_at_point(struct ewlc_server *s, double x, double y)
 {
     struct wlr_output *o =

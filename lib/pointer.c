@@ -3,11 +3,10 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include "util.h"
-#include "pointer.h"
 #include "server.h"
-
-#include "ewlc.h"
-#include "ewlc-module.h"
+#include "pointer.h"
+#include "output.h"
+#include "module.h"
 #include <emacs-module.h>
 #include <getopt.h>
 #include <linux/input-event-codes.h>
@@ -51,7 +50,6 @@
 #include <wlr/xwayland.h>
 #endif
 
-// ok
 void cursor_axis_notify(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an axis event,
@@ -64,7 +62,6 @@ void cursor_axis_notify(struct wl_listener *listener, void *data)
                                  event->delta_discrete, event->source);
 }
 
-// ok
 void cursor_button_notify(struct wl_listener *listener, void *data)
 {
     struct wlr_event_pointer_button *event = data;
@@ -77,15 +74,15 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
     switch (event->state) {
     case WLR_BUTTON_PRESSED:;
         /* Change focus if the button was _pressed_ over a client */
-        if ((c = get_client_at_point(s->cursor->x, s->cursor->y)))
-            focus_client(get_active_client(), c, 1);
+        if ((c = get_client_at_point(s, s->cursor->x, s->cursor->y)))
+            focus_client(get_active_client(s), c, 1);
 
         keyboard = wlr_seat_get_keyboard(s->seat);
         mods = wlr_keyboard_get_modifiers(keyboard);
-        for (b = buttons; b < END(buttons); b++) {
+        for (b = s->buttons; b < END(s->buttons); b++) {
             if (CLEANMASK(mods) == CLEANMASK(b->mod) &&
                 event->button == b->button && b->func) {
-                b->func(&b->arg);
+                b->func(s, &b->arg);
                 return;
             }
         }
@@ -96,11 +93,12 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
         if (s->cursor_mode != CUR_NORMAL) {
             wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "left_ptr",
                                                  s->cursor);
-            server.cursor_mode = CUR_NORMAL;
+            s->cursor_mode = CUR_NORMAL;
             /* Drop the window off on its new output */
-            active_output =
+            /* change output if necessary */
+            s->active_output =
                 get_output_at_point(s, s->cursor->x, s->cursor->y);
-            set_output(s->grabbed_client, active_output);
+            set_output(s->grabbed_client, s->active_output);
             return;
         }
         break;
@@ -111,17 +109,21 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
                                    event->state);
 }
 
-// ok
-void create_pointer(struct ewlc_server *s, struct wlr_input_device *device)
+void create_pointer(struct ewlc_server *srv, struct wlr_input_device *device)
 {
     /* We don't do anything special with pointers. All of our pointer handling
      * is proxied through wlr_cursor. On another compositor, you might take this
      * opportunity to do libinput configuration on the device to set
      * acceleration, etc. */
-    wlr_cursor_attach_input_device(server.cursor, device);
+
+    /* TODO: Fix this */
+    /* srv->buttons[0] = {MODKEY, BTN_LEFT, move_resize, {.ui = CUR_MOVE}}; */
+    /* srv->buttons[1] = {MODKEY, BTN_MIDDLE, ewlc_toggle_floating, {0}}; */
+    /* srv->buttons[2] = {MODKEY, BTN_RIGHT, move_resize, {.ui = CUR_RESIZE}}; */
+
+    wlr_cursor_attach_input_device(srv->cursor, device);
 }
 
-// ok
 void cursor_frame_notify(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an frame
@@ -134,7 +136,6 @@ void cursor_frame_notify(struct wl_listener *listener, void *data)
     wlr_seat_pointer_notify_frame(s->seat);
 }
 
-// ok
 void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an _absolute_
@@ -150,16 +151,15 @@ void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
     motion_notify(s, event->time_msec);
 }
 
-// ok
-void motion_notify(ewlc_server *s, uint32_t time)
+void motion_notify(struct ewlc_server *s, uint32_t time)
 {
     double sx = 0, sy = 0;
     struct wlr_surface *surface = NULL;
     struct ewlc_client *c;
 
     /* Update active_output (even while dragging a window) */
-    if (sloppyfocus)
-        active_output = get_output_at_point(s, s->cursor->x, s->cursor->y);
+    if (s->sloppyfocus)
+        s->active_output = get_output_at_point(s, s->cursor->x, s->cursor->y);
 
     /* If we are currently grabbing the mouse, handle and return */
     if (s->cursor_mode == CUR_MOVE) {
@@ -179,7 +179,7 @@ void motion_notify(ewlc_server *s, uint32_t time)
 
 #ifdef XWAYLAND
     /* Find an independent under the pointer and send the event along. */
-    if ((c = get_independent_at_point(s->cursor->x, s->cursor->y))) {
+    if ((c = get_independent_at_point(s, s->cursor->x, s->cursor->y))) {
         surface = wlr_surface_surface_at(
             c->surface.xwayland->surface,
             s->cursor->x - c->surface.xwayland->x - c->border_width,
@@ -190,7 +190,7 @@ void motion_notify(ewlc_server *s, uint32_t time)
          * along. */
     } else
 #endif
-        if ((c = get_client_at_point(s->cursor->x, s->cursor->y))) {
+        if ((c = get_client_at_point(s, s->cursor->x, s->cursor->y))) {
 #ifdef XWAYLAND
         if (c->type != XDG_SHELL)
             surface = wlr_surface_surface_at(
@@ -213,7 +213,6 @@ void motion_notify(ewlc_server *s, uint32_t time)
     pointer_focus(c, surface, sx, sy, time);
 }
 
-// ok
 void cursor_motion_notify(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits a _relative_
@@ -230,7 +229,6 @@ void cursor_motion_notify(struct wl_listener *listener, void *data)
     motion_notify(s, event->time_msec);
 }
 
-// ok
 void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the seat when a client provides a cursor image */
@@ -250,7 +248,6 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
                                event->hotspot_y);
 }
 
-// ok
 void seat_request_set_primary_selection_notify(struct wl_listener *listener,
                                                void *data)
 {
@@ -265,7 +262,6 @@ void seat_request_set_primary_selection_notify(struct wl_listener *listener,
     wlr_seat_set_primary_selection(s->seat, event->source, event->serial);
 }
 
-//ok
 void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the seat when a client wants to set the
@@ -277,4 +273,36 @@ void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
     struct ewlc_server *s = wl_container_of(listener, s,
                                              seat_request_set_selection_listener);
     wlr_seat_set_selection(s->seat, event->source, event->serial);
+}
+
+void move_resize(struct ewlc_server *s, const Arg *arg)
+{
+    s->grabbed_client = get_client_at_point(s, s->cursor->x, s->cursor->y);
+    if (!s->grabbed_client)
+        return;
+
+    /* Float the window and tell motionnotify to grab it */
+    set_floating(s->grabbed_client, 1);
+    switch (s->cursor_mode = arg->ui) {
+    case CUR_MOVE:
+        s->grabc_x = s->cursor->x - s->grabbed_client->geom.x;
+        s->grabc_y = s->cursor->y - s->grabbed_client->geom.y;
+
+        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr,
+                                             "fleur",
+                                             s->cursor);
+        break;
+    case CUR_RESIZE:
+        /* Doesn't work for X11 output - the next absolute motion event
+         * returns the cursor to where it started */
+        wlr_cursor_warp_closest(
+            s->cursor, NULL,
+            s->grabbed_client->geom.x + s->grabbed_client->geom.width,
+            s->grabbed_client->geom.y + s->grabbed_client->geom.height);
+
+        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr,
+                                             "bottom_right_corner",
+                                             s->cursor);
+        break;
+    }
 }
