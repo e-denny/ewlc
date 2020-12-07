@@ -49,7 +49,7 @@
 void ewlc_chvt(struct ewlc_server *s, int nbr);
 void ewlc_focus_output(int direction, struct ewlc_server *s);
 void ewlc_focus_next_client(int direction, struct ewlc_server *s);
-void ewlc_next_master(int direction, struct ewlc_server *s);
+void ewlc_add_master(struct ewlc_server *s, int delta);
 void ewlc_set_master_ratio(float inc, struct ewlc_server *s);
 void ewlc_kill_client(struct ewlc_server *s);
 void ewlc_quit(struct ewlc_server *s);

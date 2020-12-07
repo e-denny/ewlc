@@ -1,4 +1,4 @@
-;;;.el --- description -*- lexical-binding: t; -*-
+;;; run.el --- description -*- lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 2020 Edgar Denny
 ;;
@@ -20,9 +20,7 @@
 ;;; Code:
 
 (load "/home/edgar/Projects/ewlc/src/ewlc-wm.el")
-(require 'ewlc-wm)
-
-(run-command term-cmd)
+;; (require 'ewlc-wm)
 
 (start-wc)
 (exit-wc)

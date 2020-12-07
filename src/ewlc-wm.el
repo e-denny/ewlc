@@ -21,7 +21,8 @@
 
 (module-load "/home/edgar/Projects/ewlc/lib/ewlc.so")
 
-(require 'ewlc)
+;; (require ewlc)
+(require 'cl-lib)
 
 (defvar *ewlc-thread* nil "The thread running the wayland event loop.")
 
@@ -31,6 +32,57 @@
 
 (defvar ewlc-keymap-prefix "C-," "The ewlc keymap prefix.")
 
+(defun client= (client-1 client-2)
+  "Compare CLIENT-1 and CLIENT-2."
+  (ewlc/c--client= client-1 client-2))
+
+(defun move-client-to-front (elm lst)
+  "Move ELM to front of the LST."
+  (let ((new-lst (cl-remove elm lst :test 'client=)))
+    (setq new-lst (cons elm new-lst))
+    new-lst))
+
+(defun new-focus-client (curr-client next-client restack)
+  "Change focus from CURR-CLIENT to NEXT-CLIENT with possible RESTACK."
+  (let ((client-stack-list (ewlc/c--get-stack-list *ewlc-server*))
+        (client-focus-list (ewlc/c--get-focus-list *ewlc-server*)))
+    (when next-client
+      (when restack
+        (setq client-stack-list (move-client-to-front next-client client-stack-list))
+        (ewlc/c--set-stack-list *ewlc-server* client-stack-list))
+      (when (not (client= curr-client next-client))
+        (setq client-focus-list (move-client-to-front next-client client-focus-list))
+        (ewlc/c--set-focus-list *ewlc-server* client-focus-list)))
+    (when (not (client= curr-client next-client))
+      (ewlc/c--focus-client curr-client next-client))))
+
+(defun get-next-visible (client output client-list)
+  "Find next client after CLIENT within CLIENT-LIST which is visible on OUTPUT."
+  (let ((i (cl-position client client-list :test 'client=))
+        (next nil))
+    (cl-dolist (c (nthcdr (+ i 1) client-list))
+      (when (ewlc/c--is-visible-on c output)
+        (setq next c)
+        (cl-return next)))
+    (when (not next)
+      (cl-dolist (c (seq-subseq client-list 0 (- i 1)))
+        (when (ewlc/c--is-visible-on c output)
+          (setq next c)
+          (cl-return next))))
+    next))
+
+;; replacement function
+(defun new-focus-next-client ()
+  "Focus next client."
+  (let ((curr-client (ewlc/c--get-active-client *ewlc-server*))
+        next-client
+        (client-list (ewlc/c--get-client-list *ewlc-server*))
+        (curr-output (ewlc/c--get-active-output *ewlc-server*)))
+    (when curr-client
+      (setq next-client (get-next-visible curr-client curr-output client-list))
+      (new-focus-client curr-client next-client t))))
+
+
 (defun wc-focus-next-client ()
   "Focus next client."
   (ewlc-focus-next-client *ewlc-server* 1))
@@ -39,13 +91,13 @@
   "Focus previous client."
   (ewlc-focus-next-client *ewlc-server* -1))
 
-(defun wc-next-master ()
-  "Next-master."
-  (ewlc-next-master *ewlc-server* 1))
+(defun wc-add-master ()
+  "Add a master."
+  (ewlc-add-master *ewlc-server* 1))
 
-(defun wc-prev-master ()
-  "Prev master."
-  (ewlc-next-master *ewlc-server* -1))
+(defun wc-remove-master ()
+  "Remove a master."
+  (ewlc-add-master *ewlc-server* -1))
 
 (defun wc-incr-master-ratio ()
   "Inrement master ratio."
@@ -59,6 +111,22 @@
   "Kill the active client."
   (ewlc-kill-client *ewlc-server*))
 
+(defun wc-zoom ()
+  "Zoom the active client."
+  (ewlc-zoom *ewlc-server*))
+
+(defun wc-toggle-floating ()
+  "Zoom the active client."
+  (ewlc-toggle-floating *ewlc-server*))
+
+(defun wc-view ()
+  "Zoom the active client."
+  (ewlc-view *ewlc-server*))
+
+(defun wc-spawn (cmd args)
+  "Spawn an application CMD with the arguments ARGS."
+  (ewlc-spawn cmd args))
+
 (defun exit-wc ()
   "Exit the wayland compositor."
   (ewlc-cleanup *ewlc-server*)
@@ -67,7 +135,11 @@
 (defun wc-quit ()
   "Kill the window manager."
   (ewlc-quit *ewlc-server*)
-  (exit-wm))
+  (exit-wc))
+
+(defun terminal ()
+  "Start a terminal."
+  (ewlc-spawn "alacritty" ""))
 
 (defvar ewlc-command-map
   (let ((map (make-sparse-keymap)))
@@ -80,12 +152,17 @@
     (define-key map ewlc-keymap-prefix #'ewlc-command-map)
     (define-key map (kbd "M-n") #'wc-focus-next-client)
     (define-key map (kbd "M-p") #'wc-focus-prev-client)
+    (define-key map (kbd "M-y") #'new-focus-next-client)
     (define-key map (kbd "M-i") #'wc-incr-master-ratio)
     (define-key map (kbd "M-d") #'wc-decr-master-ratio)
-    (define-key map (kbd "M-m") #'wc-next-master)
-    (define-key map (kbd "M-b") #'wc-prev_master)
+    (define-key map (kbd "M-m") #'wc-add-master)
+    (define-key map (kbd "M-b") #'wc-remove-master)
     (define-key map (kbd "M-k") #'wc-kill-client)
+    (define-key map (kbd "M-z") #'wc-zoom)
+    (define-key map (kbd "M-v") #'wc-view)
+    (define-key map (kbd "M-t") #'terminal)
     (define-key map (kbd "M-q") #'wc-quit)
+    (define-key map (kbd "M-f") #'wc-toggle-floating)
     map
     ))
 
@@ -123,15 +200,12 @@
 
 (defun ewlc-apply-keybinding (mod key)
   "Apply the keybings for MOD and KEY."
-  (let ((command nil)
-        (handled 0))
-    (message "keys: %s, %s" mod key)
-    (setq command (lookup-key ewlc-prefix-map (kbd (concat mod key))))
-    (message "command: %s" command)
-    (when (and command (fboundp command))
-      (funcall command)
-      (setq handled 1))
-    handled))
+  (let ((command (lookup-key ewlc-prefix-map (kbd (concat mod key)))))
+    (if (and command (fboundp command))
+        (progn
+          (funcall command)
+          1)
+      0)))
 
 (provide 'ewlc-wm)
 ;;; ewlc-wm.el ends here

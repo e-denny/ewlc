@@ -90,23 +90,26 @@ void ewlc_focus_next_client(int direction, struct ewlc_server *s)
     /* If only one client is visible on active_output, then c_next == c_active
      */
     focus_client(c_active, c_next, 1);
+    INFO("leaving");
 }
 
-void ewlc_next_master(int direction, struct ewlc_server *s)
+void ewlc_add_master(struct ewlc_server *s, int delta)
 {
-    s->active_output->num_master = MAX(s->active_output->num_master + direction, 0);
+    s->active_output->num_master = MAX(s->active_output->num_master + delta, 0);
     arrange(s->active_output);
 }
 
 void ewlc_set_master_ratio(float inc, struct ewlc_server *s)
 {
     float f;
+    INFO(">>> entering");
 
     f = inc < 1.0 ? inc + s->active_output->master_ratio : inc - 1.0;
     if (f < 0.1 || f > 0.9)
         return;
     s->active_output->master_ratio = f;
     arrange(s->active_output);
+    INFO("<<< leaving");
 }
 
 void ewlc_kill_client(struct ewlc_server *s)
@@ -139,11 +142,16 @@ void ewlc_spawn(char *cmd, char *args[])
 
 void ewlc_toggle_floating(struct ewlc_server *s)
 {
-    struct ewlc_client *c = get_active_client(s);
+    struct ewlc_client *c;
+    INFO(">>> ewlc_toggle_floating");
+    c = get_active_client(s);
+    DEBUG("c = '%p'", c);
     if (!c)
         return;
     /* return if fullscreen */
+    DEBUG("c->is_floating = '%d'", c->is_floating);
     set_floating(c, !c->is_floating);
+    INFO("<<< ewlc_toggle_floating");
 }
 
 void ewlc_view(struct ewlc_server *s)

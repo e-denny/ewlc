@@ -140,6 +140,8 @@ void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
     c->surface.xdg = xdg_surface;
     c->server = s;
     c->border_width = s->border_px;
+    // TODO: handle dialogs and window rules
+    c->is_floating = 0;
 
     /* Tell the client not to try anything fancy */
     wlr_xdg_toplevel_set_tiled(c->surface.xdg, WLR_EDGE_TOP | WLR_EDGE_BOTTOM |
@@ -434,10 +436,12 @@ struct ewlc_client *get_active_client(struct ewlc_server *s)
 
 void set_floating(struct ewlc_client *c, int floating)
 {
+    INFO(">>> set_floating");
     if (c->is_floating == floating)
         return;
     c->is_floating = floating;
     arrange(c->output);
+    INFO("<<< set_floating");
 }
 
 void set_output(struct ewlc_client *c, struct ewlc_output *o)
@@ -506,6 +510,54 @@ struct ewlc_client *get_client_at_point(struct ewlc_server *s, double x, double 
             return c;
 
     return NULL;
+}
+
+
+void e_focus_client(struct ewlc_client *old, struct ewlc_client *c)
+{
+    struct ewlc_server *s;
+    struct wlr_keyboard *kb;
+    INFO(">>>");
+    DEBUG("c = '%p'", c);
+    DEBUG("old = '%p'", old);
+    s = c->server;
+    DEBUG("s = '%p'", s);
+    DEBUG("s->seat = '%p'", s->seat);
+    kb = wlr_seat_get_keyboard(s->seat);
+    DEBUG("kb = '%p'", kb);
+
+    /* Deactivate old client if focus is changing */
+    if (c != old && old) {
+#ifdef XWAYLAND
+        if (old->type != XDG_SHELL)
+            wlr_xwayland_surface_activate(old->surface.xwayland, 0);
+        else
+#endif
+            wlr_xdg_toplevel_set_activated(old->surface.xdg, 0);
+    }
+
+    /* Update wlroots' keyboard focus */
+    if (!c) {
+        /* With no client, all we have left is to clear focus */
+        wlr_seat_keyboard_notify_clear_focus(s->seat);
+        INFO("return-2");
+        return;
+    }
+
+    /* Have a client, so focus its top-level wlr_surface */
+    wlr_seat_keyboard_notify_enter(s->seat, get_surface(c), kb->keycodes,
+                                   kb->num_keycodes, &kb->modifiers);
+
+    s->active_output = c->output;
+
+    /* Activate the new client */
+#ifdef XWAYLAND
+    if (c->type != XDG_SHELL)
+        wlr_xwayland_surface_activate(c->surface.xwayland, 1);
+    else
+#endif
+        wlr_xdg_toplevel_set_activated(c->surface.xdg, 1);
+    INFO("<<<");
 }
 
 void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)

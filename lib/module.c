@@ -2,13 +2,19 @@
 #include "commands.h"
 #include "keyboard.h"
 #include "module.h"
+#include "client.h"
 #include "util.h"
 #include <emacs-module.h>
+#include <wayland-client.h>
+#include <wayland-server-core.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 emacs_value Qt;
 emacs_value Qnil;
+emacs_value Flist;
+emacs_value Flength;
+emacs_value Fnth;
 emacs_value Fewlc_apply_keybinding;
 
 /* Declare mandatory GPL symbol.  */
@@ -18,6 +24,16 @@ int string_bytes(emacs_env *env, emacs_value string) {
   ptrdiff_t size = 0;
   env->copy_string_contents(env, string, NULL, &size);
   return size;
+}
+
+static emacs_value Fewlc_compare_clients(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
+{
+    struct ewlc_client *c_a = env->get_user_ptr(env, args[0]);
+    struct ewlc_client *c_b = env->get_user_ptr(env, args[1]);
+    if (c_a == c_b)
+        return Qt;
+    return Qnil;
 }
 
 static emacs_value Fewlc_start(emacs_env *env, ptrdiff_t nargs,
@@ -51,8 +67,6 @@ static emacs_value Fewlc_focus_next_client(emacs_env *env, ptrdiff_t nargs,
 {
     struct ewlc_server *server = env->get_user_ptr(env, args[0]);
     int direction = env->extract_integer(env, args[1]);
-    DEBUG("server = '%p'", server);
-    DEBUG("direction = '%d'", direction);
     ewlc_focus_next_client(direction, server);
     return Qt;
 }
@@ -96,13 +110,13 @@ static emacs_value Fewlc_zoom(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
-static emacs_value Fewlc_next_master(emacs_env *env, ptrdiff_t nargs,
-                                     emacs_value args[], void *data)
+static emacs_value Fewlc_add_master(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
 {
     struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    int direction = env->extract_integer(env, args[1]);
+    int delta = env->extract_integer(env, args[1]);
 
-    ewlc_next_master(direction, server);
+    ewlc_add_master(server, delta);
     return Qt;
 }
 
@@ -118,7 +132,7 @@ static emacs_value Fewlc_spawn(emacs_env *env, ptrdiff_t nargs,
     if (nargs > 1) {
         len = string_bytes(env, args[1]);
         cmd_args = malloc(sizeof(char*));
-        cmd_args[0] = malloc(sizeof(char) * len);
+        cmd_args[1] = malloc(sizeof(char) * len);
         env->copy_string_contents(env, args[1], cmd_args[0], &len);
     }
     ewlc_spawn(cmd, cmd_args);
@@ -175,7 +189,7 @@ emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
     struct ewlc_server *srv;
     struct wlr_event_keyboard_key *event;
 
-    srv= env->get_user_ptr(env, args[0]);
+    srv = env->get_user_ptr(env, args[0]);
     if (srv->key_list == NULL)
         return Qnil;
 
@@ -219,6 +233,177 @@ void e_message(emacs_env *env, char *msg_str)
     env->funcall(env, env->intern(env, "message"), 1, (emacs_value[]){e_msg});
 }
 
+//------------------------------------
+
+emacs_value Fewlc_get_active_client(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
+{
+    struct ewlc_server *srv;
+    struct ewlc_client *c;
+
+    srv = env->get_user_ptr(env, args[0]);
+    c = get_active_client(srv);
+    return env->make_user_ptr(env, NULL, c);
+}
+
+emacs_value Fewlc_get_active_output(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
+{
+    struct ewlc_server *srv;
+    struct ewlc_output *o;
+
+    srv = env->get_user_ptr(env, args[0]);
+    o = srv->active_output;
+    return env->make_user_ptr(env, NULL, o);
+}
+
+emacs_value Fewlc_get_client_list(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
+{
+    struct ewlc_server *srv;
+    struct ewlc_client *c;
+    emacs_value elements[128];
+    int len = 0;
+
+    srv = env->get_user_ptr(env, args[0]);
+
+    wl_list_for_each(c, &srv->client_list, client_link)
+    {
+        elements[len++] = env->make_user_ptr(env, NULL, c);
+    }
+    return list(env, elements, len);
+}
+
+emacs_value Fewlc_set_focus_list(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    emacs_value focus_lst, val;
+    int len;
+    struct ewlc_server *srv;
+    struct ewlc_client *c;
+
+    srv = env->get_user_ptr(env, args[0]);
+    focus_lst = args[1];
+    len = length(env, focus_lst);
+    val = nth(env, 0, focus_lst);
+
+    if (len > 0) {
+        wl_list_init(&srv->client_focus_list);
+        for (int i = len - 1; i >= 0; i--) {
+            val = nth(env, i, focus_lst);
+            c = env->get_user_ptr(env, val);
+            wl_list_insert(&srv->client_focus_list, &c->client_focus_link);
+        }
+    }
+    return Qt;
+}
+
+
+emacs_value Fewlc_get_focus_list(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    struct ewlc_server *srv;
+    struct ewlc_client *c;
+    emacs_value elements[128];
+    int len = 0;
+
+    srv = env->get_user_ptr(env, args[0]);
+
+    wl_list_for_each(c, &srv->client_focus_list, client_focus_link)
+    {
+        elements[len++] = env->make_user_ptr(env, NULL, c);
+    }
+    return list(env, elements, len);
+}
+
+emacs_value Fewlc_set_stack_list(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    emacs_value stack_lst, val;
+    int len;
+    struct ewlc_server *srv;
+    struct ewlc_client *c;
+
+    srv = env->get_user_ptr(env, args[0]);
+    stack_lst = args[1];
+    len = length(env, stack_lst);
+    val = nth(env, 0, stack_lst);
+
+    if (len > 0) {
+        wl_list_init(&srv->client_stack_list);
+        for (int i = len - 1; i >= 0; i--) {
+            val = nth(env, i, stack_lst);
+            c = env->get_user_ptr(env, val);
+            wl_list_insert(&srv->client_stack_list, &c->client_stack_link);
+        }
+    }
+    return Qt;
+}
+
+emacs_value Fewlc_get_stack_list(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    struct ewlc_server *srv;
+    struct ewlc_client *c;
+    emacs_value elements[128];
+    int len = 0;
+
+    srv = env->get_user_ptr(env, args[0]);
+
+    wl_list_for_each(c, &srv->client_stack_list, client_stack_link)
+    {
+        elements[len++] = env->make_user_ptr(env, NULL, c);
+    }
+    return list(env, elements, len);
+}
+
+emacs_value list(emacs_env *env, emacs_value elements[], ptrdiff_t len)
+{
+    return env->funcall(env, Flist, len, elements);
+}
+
+int length(emacs_env *env, emacs_value lst)
+{
+    emacs_value len = env->funcall(env, Flength, 1, (emacs_value[]){lst});
+    return env->extract_integer(env, len);
+}
+
+emacs_value nth(emacs_env *env, int idx, emacs_value lst)
+{
+    emacs_value e_idx = env->make_integer(env, idx);
+    return env->funcall(env, Fnth, 2, (emacs_value[]){e_idx, lst});
+}
+
+emacs_value Fewlc_is_visible_on(emacs_env *env, ptrdiff_t nargs,
+                                emacs_value args[], void *data)
+{
+    struct ewlc_client *c;
+    struct ewlc_output *o;
+
+    c = env->get_user_ptr(env, args[0]);
+    o = env->get_user_ptr(env, args[1]);
+
+    if (is_visible_on(c, o)) {
+        return Qt;
+    }
+    return Qnil;
+}
+
+emacs_value Fewlc_focus_client(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+
+    struct ewlc_client *c_curr;
+    struct ewlc_client *c_next;
+
+    INFO(">>>");
+    c_curr = env->get_user_ptr(env, args[0]);
+    c_next = env->get_user_ptr(env, args[1]);
+
+    e_focus_client(c_curr, c_next);
+    INFO("<<<");
+    return Qnil;
+}
 /*------------------------------------------------------------------------*/
 
 /* Bind NAME to FUN.  */
@@ -250,7 +435,11 @@ int emacs_module_init(struct emacs_runtime *ert)
     /* symbols */
     Qt = env->make_global_ref(env, env->intern(env, "t"));
     Qnil = env->make_global_ref(env, env->intern(env, "nil"));
+    Flist = env->make_global_ref(env, env->intern(env, "list"));
+    Flength = env->make_global_ref(env, env->intern(env, "length"));
+    Fnth = env->make_global_ref(env, env->intern(env, "nth"));
 
+    /* functions */
     func = env->make_function(env, 0, 0, Fewlc_start, "Start the compositor.",
                               NULL);
     bind_function(env, "ewlc-start", func);
@@ -267,13 +456,13 @@ int emacs_module_init(struct emacs_runtime *ert)
                               "Focus the next client.", NULL);
     bind_function(env, "ewlc-focus-next-client", func);
 
-    func = env->make_function(env, 1, 1, Fewlc_set_master_ratio,
+    func = env->make_function(env, 2, 2, Fewlc_set_master_ratio,
                               "Adjust master ratio.", NULL);
     bind_function(env, "ewlc-set-master-ratio", func);
 
-    func = env->make_function(env, 2, 2, Fewlc_next_master,
+    func = env->make_function(env, 2, 2, Fewlc_add_master,
                               "Set next master.", NULL);
-    bind_function(env, "ewlc-next-master", func);
+    bind_function(env, "ewlc-add-master", func);
 
     func = env->make_function(env, 1, 1, Fewlc_kill_client,
                               "Kill the focused client.", NULL);
@@ -293,7 +482,7 @@ int emacs_module_init(struct emacs_runtime *ert)
 
     func = env->make_function(env, 1, 1, Fewlc_toggle_floating,
                               "Toggle Floating.", NULL);
-    bind_function(env, "ewlc-toggle_floating", func);
+    bind_function(env, "ewlc-toggle-floating", func);
 
     func = env->make_function(env, 2, 2, Fewlc_focus_output,
                               "focus output.", NULL);
@@ -310,11 +499,46 @@ int emacs_module_init(struct emacs_runtime *ert)
     func = env->make_function(env, 2, 2, Fewlc_chvt,
                               "Change VT.", NULL);
     bind_function(env, "ewlc-chvt", func);
-    //  Fewlc_apply_keybinding = env->intern(env, "ewlc-apply-keybinding");
 
-    /* func = env->make_function(env, 2, 2, Fewlc_apply_keybinding, */
-    /*                           "Apply an emacs keybinding.", NULL); */
-    /* bind_function(env, "ewlc-apply-keybinding", func); */
+    func = env->make_function(env, 1, 1, Fewlc_get_active_client,
+                              "Get active client.", NULL);
+    bind_function(env, "ewlc/c--get-active-client", func);
+
+    func = env->make_function(env, 1, 1, Fewlc_get_active_output,
+                              "Get active output.", NULL);
+    bind_function(env, "ewlc/c--get-active-output", func);
+
+    func = env->make_function(env, 1, 1, Fewlc_get_client_list,
+                              "Get list of clients.", NULL);
+    bind_function(env, "ewlc/c--get-client-list", func);
+
+    func = env->make_function(env, 1, 1, Fewlc_get_stack_list,
+                              "Get stack list of clients.", NULL);
+    bind_function(env, "ewlc/c--get-stack-list", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_set_stack_list,
+                              "Set stack list of clients.", NULL);
+    bind_function(env, "ewlc/c--set-stack-list", func);
+
+    func = env->make_function(env, 1, 1, Fewlc_get_focus_list,
+                              "Get list of focused clients.", NULL);
+    bind_function(env, "ewlc/c--get-focus-list", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_set_focus_list,
+                              "Set focus list of clients.", NULL);
+    bind_function(env, "ewlc/c--set-focus-list", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_is_visible_on,
+                              "Is the client visible on the output.", NULL);
+    bind_function(env, "ewlc/c--is-visible-on", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_focus_client,
+                              "Focus the client.", NULL);
+    bind_function(env, "ewlc/c--focus-client", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_compare_clients,
+                              "Compare clients.", NULL);
+    bind_function(env, "ewlc/c--client=", func);
 
     provide(env, "ewlc");
 

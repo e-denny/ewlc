@@ -71,6 +71,7 @@ void xdg_surface_commit_notify(struct wl_listener *listener, void *data);
 void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data);
 void surface_destroy_notify(struct wl_listener *listener, void *data);
 void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift);
+void e_focus_client(struct ewlc_client *old, struct ewlc_client *c);
 struct ewlc_client *focus_top(struct ewlc_output *o);
 void surface_map_notify(struct wl_listener *listener, void *data);
 void render_surface(struct wlr_surface *surface, int sx, int sy, void *data);
