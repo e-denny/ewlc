@@ -32,6 +32,9 @@
 
 (defvar ewlc-keymap-prefix "C-," "The ewlc keymap prefix.")
 
+
+;;--------------------------------------------------------------------
+
 (defun client= (client-1 client-2)
   "Compare CLIENT-1 and CLIENT-2."
   (ewlc/c--client= client-1 client-2))
@@ -56,40 +59,46 @@
     (when (not (client= curr-client next-client))
       (ewlc/c--focus-client curr-client next-client))))
 
-(defun get-next-visible (client output client-list)
-  "Find next client after CLIENT within CLIENT-LIST which is visible on OUTPUT."
-  (let ((i (cl-position client client-list :test 'client=))
-        (next nil))
-    (cl-dolist (c (nthcdr (+ i 1) client-list))
+(defun get-next-visible (client output client-list direction)
+  "Get next or prev CLIENT within CLIENT-LIST which is visible on OUTPUT.
+DIRECTION is 'next or 'prev."
+  (let* (next
+        (lst (if (equal direction 'prev)
+                 (reverse client-list)
+               (cl-copy-list client-list)))
+        (i (cl-position client lst :test 'client=)))
+    ;FIXME: the 'prev does not work correctly
+    (cl-dolist (c (nthcdr (+ i 1) lst))
       (when (ewlc/c--is-visible-on c output)
         (setq next c)
         (cl-return next)))
     (when (not next)
-      (cl-dolist (c (seq-subseq client-list 0 (- i 1)))
+      (cl-dolist (c (seq-subseq lst 0 (- i 1)))
         (when (ewlc/c--is-visible-on c output)
           (setq next c)
           (cl-return next))))
     next))
 
 ;; replacement function
-(defun new-focus-next-client ()
-  "Focus next client."
+(defun new-focus-next-client (direction)
+  "Focus next client in DIRECTION next or prev."
   (let ((curr-client (ewlc/c--get-active-client *ewlc-server*))
         next-client
         (client-list (ewlc/c--get-client-list *ewlc-server*))
         (curr-output (ewlc/c--get-active-output *ewlc-server*)))
     (when curr-client
-      (setq next-client (get-next-visible curr-client curr-output client-list))
+      (setq next-client (get-next-visible curr-client curr-output client-list direction))
       (new-focus-client curr-client next-client t))))
 
+;;--------------------------------------------------------------------
 
 (defun wc-focus-next-client ()
   "Focus next client."
-  (ewlc-focus-next-client *ewlc-server* 1))
+  (new-focus-next-client 'next))
 
 (defun wc-focus-prev-client ()
   "Focus previous client."
-  (ewlc-focus-next-client *ewlc-server* -1))
+  (new-focus-next-client 'prev))
 
 (defun wc-add-master ()
   "Add a master."
@@ -144,15 +153,14 @@
 (defvar ewlc-command-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "n") #'wc-focus-next-client)
-    (define-key map (kbd "p") #'wc-focus-prev-client)
-    ))
+    (define-key map (kbd "p") #'wc-focus-prev-client)))
 
 (defvar ewlc-prefix-map
   (let ((map (make-sparse-keymap)))
     (define-key map ewlc-keymap-prefix #'ewlc-command-map)
     (define-key map (kbd "M-n") #'wc-focus-next-client)
     (define-key map (kbd "M-p") #'wc-focus-prev-client)
-    (define-key map (kbd "M-y") #'new-focus-next-client)
+;;    (define-key map (kbd "M-s") #'new-focus-next-client)
     (define-key map (kbd "M-i") #'wc-incr-master-ratio)
     (define-key map (kbd "M-d") #'wc-decr-master-ratio)
     (define-key map (kbd "M-m") #'wc-add-master)
@@ -177,18 +185,26 @@
   (setq *ewlc-running* t)
   (setq *ewlc-thread* (make-thread
                        (lambda ()
-                         (while *ewlc-running*
-                           ;; dispatch queued wayland events.
-                           (ewlc-display-dispatch *ewlc-server*)
-                           (ewlc-handle-keybindings *ewlc-server*)
-                           (sleep-for 0.01)))
+                         (let ((count 0))
+                           (while (and (< count 1000)  *ewlc-running*)
+                             (ewlc-handle-keybindings *ewlc-server*)
+                             (ewlc-handle-events *ewlc-server*)
+                             ;; dispatch queued wayland events.
+                             ;; FIXME: I think that there is a potential race condition here.
+                             ;; At least the events can occur too late or out of sequence.
+                             ;; I need non-blocking async event handling
+                             (ewlc-display-dispatch *ewlc-server*)
+                             (setq count (+ 1 count))
+                             (sleep-for 0.01))
+                           )
+                         )
                        "loop-thread")))
-
 
 (defun wm-loop ()
   "Dispatch wayland events."
   (ewlc-display-dispatch *ewlc-server*)
-  (ewlc-handle-keybindings *ewlc-server*))
+  (ewlc-handle-keybindings *ewlc-server*)
+  (ewlc-handle-events *ewlc-server*))
 
 (defun start-wc-new()
   "Start the wayland compositor."
@@ -206,6 +222,8 @@
           (funcall command)
           1)
       0)))
+
+;;--------------------------------------------------------------------
 
 (provide 'ewlc-wm)
 ;;; ewlc-wm.el ends here

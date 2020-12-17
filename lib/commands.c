@@ -61,38 +61,6 @@ void ewlc_focus_output(int direction, struct ewlc_server *s)
     focus_client(c, focus_top(o), 1);
 }
 
-void ewlc_focus_next_client(int direction, struct ewlc_server *s)
-{
-    /* Focus the next or previous client (in tiling order) on active_output */
-    struct ewlc_client *c_next, *c_active = get_active_client(s);
-    DEBUG("c_active = '%p'", c_active);
-
-    if (!c_active)
-        return;
-    INFO("");
-    if (direction > 0) {
-        wl_list_for_each(c_next, &c_active->client_link, client_link)
-        {
-            if (&c_next->client_link == &s->client_list)
-                continue; /* wrap past the sentinel node */
-            if (is_visible_on(c_next, s->active_output))
-                break; /* found it */
-        }
-    } else {
-        wl_list_for_each_reverse(c_next, &c_active->client_link, client_link)
-        {
-            if (&c_next->client_link == &s->client_list)
-                continue; /* wrap past the sentinel node */
-            if (is_visible_on(c_next, s->active_output))
-                break; /* found it */
-        }
-    }
-    /* If only one client is visible on active_output, then c_next == c_active
-     */
-    focus_client(c_active, c_next, 1);
-    INFO("leaving");
-}
-
 void ewlc_add_master(struct ewlc_server *s, int delta)
 {
     s->active_output->num_master = MAX(s->active_output->num_master + delta, 0);

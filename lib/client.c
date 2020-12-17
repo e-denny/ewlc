@@ -452,7 +452,12 @@ void set_output(struct ewlc_client *c, struct ewlc_output *o)
     struct ewlc_client *c_new;
     INFO("enter");
     DEBUG("c = '%p'", c);
+    DEBUG("o = '%p'", o);
     DEBUG("old_output = '%p'", old_output);
+    DEBUG("wlr_output = '%p'", o->wlr_output);
+    INFO(">1");
+    DEBUG("name = '%s'", o->wlr_output->name);
+    INFO(">2");
     DEBUG("s = '%p'", s);
     DEBUG("old_c = '%p'", old_c);
 

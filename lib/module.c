@@ -3,6 +3,8 @@
 #include "keyboard.h"
 #include "module.h"
 #include "client.h"
+#include "output.h"
+#include "pointer.h"
 #include "util.h"
 #include <emacs-module.h>
 #include <wayland-client.h>
@@ -60,15 +62,6 @@ static emacs_value Fewlc_cleanup(emacs_env *env, ptrdiff_t nargs,
     struct ewlc_server *srv = env->get_user_ptr(env, args[0]);
     int r = ewlc_cleanup(srv);
     return env->make_integer(env, r);
-}
-
-static emacs_value Fewlc_focus_next_client(emacs_env *env, ptrdiff_t nargs,
-                                           emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    int direction = env->extract_integer(env, args[1]);
-    ewlc_focus_next_client(direction, server);
-    return Qt;
 }
 
 static emacs_value Fewlc_set_master_ratio(emacs_env *env, ptrdiff_t nargs,
@@ -224,6 +217,25 @@ emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
     }
     INFO("leaving");
     return Qt;
+}
+
+emacs_value Fewlc_handle_events(emacs_env *env, ptrdiff_t nargs,
+                                emacs_value args[], void *e_data)
+{
+    /* Get the next pending event and pass it to it's handler.
+     * This called within the emacs ewlc event loop. */
+    struct ewlc_server *srv;
+    int handled;
+    INFO(">>>>>");
+
+    srv = env->get_user_ptr(env, args[0]);
+    DEBUG("srv: %p", srv);
+
+    handled = handle_events(srv);
+    INFO("<<<<<");
+    if (handled == 1)
+        return Qt;
+    return Qnil;
 }
 
 void e_message(emacs_env *env, char *msg_str)
@@ -452,10 +464,6 @@ int emacs_module_init(struct emacs_runtime *ert)
                               NULL);
     bind_function(env, "ewlc-cleanup", func);
 
-    func = env->make_function(env, 2, 2, Fewlc_focus_next_client,
-                              "Focus the next client.", NULL);
-    bind_function(env, "ewlc-focus-next-client", func);
-
     func = env->make_function(env, 2, 2, Fewlc_set_master_ratio,
                               "Adjust master ratio.", NULL);
     bind_function(env, "ewlc-set-master-ratio", func);
@@ -475,6 +483,10 @@ int emacs_module_init(struct emacs_runtime *ert)
     func = env->make_function(env, 1, 1, Fewlc_handle_keybindings,
                               "Handle the keybindings.", NULL);
     bind_function(env, "ewlc-handle-keybindings", func);
+
+    func = env->make_function(env, 1, 1, Fewlc_handle_events,
+                              "Handle the events.", NULL);
+    bind_function(env, "ewlc-handle-events", func);
 
     func = env->make_function(env, 1, 1, Fewlc_zoom,
                               "Zoom.", NULL);

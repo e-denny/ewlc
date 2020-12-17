@@ -35,11 +35,16 @@ struct ewlc_output_rule {
 
 /* function declarations */
 void arrange(struct ewlc_output *o);
-void output_destroy_notify(struct wl_listener *listener, void *data);
 struct ewlc_output *set_next_output(int direction, struct ewlc_server *s);
-void output_frame_notify(struct wl_listener *listener, void *data);
-void backend_new_output_notify(struct wl_listener *listener, void *data);
 void tile(struct ewlc_output *o);
 struct ewlc_output *get_output_at_point(struct ewlc_server *s, double x, double y);
+
+void output_frame_notify(struct wl_listener *listener, void *data);
+void output_destroy_notify(struct wl_listener *listener, void *data);
+void backend_new_output_notify(struct wl_listener *listener, void *data);
+
+void output_frame_handler(struct wl_listener *listener, void *data);
+void output_destroy_handler(struct wl_listener *listener, void *data);
+void backend_new_output_handler(struct wl_listener *listener, void *data);
 
 #endif // __OUTPUT_H_

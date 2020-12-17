@@ -68,7 +68,7 @@ void output_destroy_notify(struct wl_listener *listener, void *data)
     free(o);
 }
 
-void backend_new_output_notify(struct wl_listener *listener, void *data)
+void backend_new_output_handler(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the backend when a new output (aka a display or
      * output) becomes available. */
@@ -84,6 +84,7 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
         /* defaults */
         {NULL, 0.5, 1, 1, WL_OUTPUT_TRANSFORM_NORMAL},
     };
+    INFO("    >>>");
 
     /* The mode is a tuple of (width, height, refresh rate), and each
      * output supports only a specific set of modes. We just pick the
@@ -129,6 +130,7 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
      */
     wlr_output_layout_add_auto(s->output_layout, wlr_output);
     s->output_geom = *wlr_output_layout_get_box(s->output_layout, NULL);
+    INFO("    <<<");
 }
 
 struct ewlc_output *set_next_output(int direction, struct ewlc_server *s)
@@ -244,7 +246,21 @@ void tile(struct ewlc_output *o)
 
 struct ewlc_output *get_output_at_point(struct ewlc_server *s, double x, double y)
 {
-    struct wlr_output *o =
-        wlr_output_layout_output_at(s->output_layout, x, y);
+    struct wlr_output *o = wlr_output_layout_output_at(s->output_layout, x, y);
     return o ? o->data : NULL;
+}
+
+// ----------------------------------------------------------------------
+
+void backend_new_output_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is raised by the backend when a new output (aka a display or
+     * output) becomes available. */
+    struct ewlc_server *s;
+    struct event_node *e;
+    INFO("    >>>");
+    s = wl_container_of(listener, s, backend_new_output_listener);
+    e = create_event(listener, data, EWLC_BACKEND_NEW_OUTPUT);
+    s->event_list = add_event(s->event_list, e);
+    INFO("    <<<");
 }

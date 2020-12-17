@@ -207,7 +207,7 @@ void ewlc_setup(struct ewlc_server *srv)
     wl_signal_add(&srv->xdg_shell->events.new_surface,
                   &srv->xdg_shell_new_surface_listener);
 
-    /* Use xdg_decoration protocol to negotiate swever side decorations */
+    /* Use xdg_decoration protocol to negotiate server side decorations */
     srv->xdeco_mgr = wlr_xdg_decoration_manager_v1_create(srv->display);
 
     srv->xdeco_mgr_new_top_level_decoration_listener.notify =
@@ -311,6 +311,7 @@ struct ewlc_server *ewlc_start(emacs_env *env)
     const char *socket;
     char startup_cmd[] = "alacritty";
     struct ewlc_server *srv = calloc(1, sizeof(*srv));
+    struct ewlc_output *o;
 
     INFO("into");
     srv->e_env = env;
@@ -343,7 +344,6 @@ struct ewlc_server *ewlc_start(emacs_env *env)
     srv->focus_color[3] = 1.0;
 
     /* Add a Unix socket to the Wayland display. */
-    // const char *socket = wl_display_add_socket_auto(server.display);
     socket = wl_display_add_socket_auto(srv->display);
 
     if (!socket)
@@ -354,6 +354,14 @@ struct ewlc_server *ewlc_start(emacs_env *env)
     if (!wlr_backend_start(srv->backend))
         ERROR("startup: backend_start");
 
+    // FIXME: loop over events until they are all cleared.
+    handle_events(srv);
+
+    INFO("output list");
+    wl_list_for_each(o, &srv->output_list, output_link) {
+        DEBUG("    > output: %p", o);
+    }
+    INFO("after output list");
     /* Now that outputs are initialized, choose initial active_output based on
      * cursor position, and set default cursor image */
     srv->active_output = get_output_at_point(srv, srv->cursor->x, srv->cursor->y);
@@ -415,4 +423,148 @@ int ewlc_display_dispatch(struct ewlc_server *srv)
     wl_event_loop_dispatch(loop, -1);
     // INFO("leaving");
     return 0;
+}
+
+int handle_events(struct ewlc_server *srv)
+{
+
+    struct wl_listener *listener;
+    void *data;
+    int type;
+    int handled;
+    INFO(">>>>>");
+    DEBUG("srv: %p", srv);
+
+    while (srv->event_list != NULL) {
+        handled = 0;
+        listener = srv->event_list->listener;
+        DEBUG("listener: %p", listener);
+        data = srv->event_list->data;
+        DEBUG("data: %p", data);
+        type = srv->event_list->type;
+        DEBUG("%p, %p, %d", listener, data, type);
+
+        switch (type) {
+        case EWLC_CURSOR_AXIS:
+            cursor_axis_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_BUTTON:
+            cursor_button_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_MOTION:
+            cursor_motion_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_FRAME:
+            cursor_frame_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_MOTION_ABSOLUTE:
+            cursor_motion_absolute_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SEAT_REQUEST_SET_CURSOR:
+            seat_request_set_cursor_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION:
+            seat_request_set_primary_selection_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SEAT_REQUEST_SET_SELECTION:
+            seat_request_set_selection_handler(listener, data);
+            handled = 1;
+            break;
+
+        case EWLC_KEYBOARD_DESTROY:
+            keyboard_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_BACKEND_NEW_INPUT:
+            backend_new_input_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_KEYBOARD_KEY:
+            keyboard_key_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_KEYBOARD_MODIFIERS:
+            keyboard_modifiers_handler(listener, data);
+            handled = 1;
+            break;
+
+
+        case EWLC_XWAYLAND_READY:
+            xwayland_ready_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_DECO_REQUEST_MODE:
+            deco_request_mode_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_DECO_DESTROY:
+            deco_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_NEW_TOPLEVEL_DECORATION:
+            xdeco_mgr_new_toplevel_decoration_handler(listener, data);
+            handled = 1;
+            break;
+
+
+        case EWLC_OUTPUT_DESTROY:
+            output_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_OUTPUT_FRAME:
+            output_frame_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_BACKEND_NEW_OUTPUT:
+            backend_new_output_handler(listener, data);
+            handled = 1;
+            break;
+
+
+        case EWLC_XDG_SURFACE_COMMIT:
+            xdg_surface_commit_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_XDG_SHELL_NEW_SURFACE:
+            xdg_shell_new_surface_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SURFACE_DESTROY:
+            surface_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SURFACE_MAP:
+            surface_map_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SURFACE_UNMAP:
+            surface_unmap_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_X_SURFACE_REQUEST_ACTIVATE:
+            xwayland_surface_request_activate_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_NEW_X_SURFACE:
+            new_xwayland_surface_handler(listener, data);
+            handled = 1;
+            break;
+        }
+
+        if (handled == 0) {
+            DEBUG("Error: event not handled! type: %d", handled);
+            return handled;
+        }
+
+        srv->event_list = remove_event(srv->event_list);
+    }
+    INFO("<<<<<<");
+    return handled;
 }
