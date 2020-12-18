@@ -133,13 +133,16 @@ struct ewlc_server {
 };
 
 struct ewlc_decoration {
-    struct ewlc_server *server;
     struct wl_listener deco_request_mode_listener;
     struct wl_listener deco_destroy_listener;
 };
 
 
 /* function declarations */
+void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener,
+                                    void *data);
+void deco_destroy_notify(struct wl_listener *listener, void *data);
+void deco_request_mode_notify(struct wl_listener *listener, void *data);
 void sigchld(int unused);
 void ewlc_setup(struct ewlc_server *srv);
 struct ewlc_server *ewlc_start(emacs_env *env);
@@ -147,21 +150,9 @@ int ewlc_cleanup(struct ewlc_server *srv);
 int ewlc_display_dispatch(struct ewlc_server *srv);
 int handle_events(struct ewlc_server *srv);
 
-void deco_destroy_notify(struct wl_listener *listener, void *data);
-void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void *data);
-void deco_request_mode_notify(struct wl_listener *listener, void *data);
-
-void deco_destroy_handler(struct wl_listener *listener, void *data);
-void xdeco_mgr_new_toplevel_decoration_handler(struct wl_listener *listener, void *data);
-void deco_request_mode_handler(struct wl_listener *listener, void *data);
-
 #ifdef XWAYLAND
-void update_window_type(struct ewlc_client *c);
-
 void xwayland_ready_notify(struct wl_listener *listener, void *data);
-
-void xwayland_ready_handler(struct wl_listener *listener, void *data);
-
+void update_window_type(struct ewlc_client *c);
 #endif
 
 // TODO: make a variable

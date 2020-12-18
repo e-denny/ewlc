@@ -3,8 +3,6 @@
 #include "keyboard.h"
 #include "module.h"
 #include "client.h"
-#include "output.h"
-#include "pointer.h"
 #include "util.h"
 #include <emacs-module.h>
 #include <wayland-client.h>
@@ -62,6 +60,15 @@ static emacs_value Fewlc_cleanup(emacs_env *env, ptrdiff_t nargs,
     struct ewlc_server *srv = env->get_user_ptr(env, args[0]);
     int r = ewlc_cleanup(srv);
     return env->make_integer(env, r);
+}
+
+static emacs_value Fewlc_focus_next_client(emacs_env *env, ptrdiff_t nargs,
+                                           emacs_value args[], void *data)
+{
+    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
+    int direction = env->extract_integer(env, args[1]);
+    ewlc_focus_next_client(direction, server);
+    return Qt;
 }
 
 static emacs_value Fewlc_set_master_ratio(emacs_env *env, ptrdiff_t nargs,
@@ -463,6 +470,10 @@ int emacs_module_init(struct emacs_runtime *ert)
     func = env->make_function(env, 1, 1, Fewlc_cleanup, "Cleanup after exit.",
                               NULL);
     bind_function(env, "ewlc-cleanup", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_focus_next_client,
+                              "Focus the next client.", NULL);
+    bind_function(env, "ewlc-focus-next-client", func);
 
     func = env->make_function(env, 2, 2, Fewlc_set_master_ratio,
                               "Adjust master ratio.", NULL);

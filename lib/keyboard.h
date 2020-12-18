@@ -21,16 +21,10 @@ struct ewlc_keyboard {
     struct wl_listener keyboard_destroy_listener;
 };
 
-void create_keyboard(struct ewlc_server *srv, struct wlr_input_device *device);
-
 void keyboard_destroy_notify(struct wl_listener *listener, void *data);
+void create_keyboard(struct ewlc_server *srv, struct wlr_input_device *device);
 void keyboard_key_notify(struct wl_listener *listener, void *data);
 void keyboard_modifiers_notify(struct wl_listener *listener, void *data);
 void backend_new_input_notify(struct wl_listener *listener, void *data);
-
-void keyboard_destroy_handler(struct wl_listener *listener, void *data);
-void keyboard_key_handler(struct wl_listener *listener, void *data);
-void keyboard_modifiers_handler(struct wl_listener *listener, void *data);
-void backend_new_input_handler(struct wl_listener *listener, void *data);
 
 #endif // __KEYBOARD_H_

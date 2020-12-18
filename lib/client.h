@@ -67,43 +67,32 @@ struct render_data {
 struct wlr_surface *get_surface(struct ewlc_client *c);
 bool is_visible_on(struct ewlc_client *c, struct ewlc_output *o);
 void apply_bounds(struct ewlc_client *c, struct wlr_box *bbox);
+void xdg_surface_commit_notify(struct wl_listener *listener, void *data);
+void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data);
+void surface_destroy_notify(struct wl_listener *listener, void *data);
 void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift);
 void e_focus_client(struct ewlc_client *old, struct ewlc_client *c);
 struct ewlc_client *focus_top(struct ewlc_output *o);
+void surface_map_notify(struct wl_listener *listener, void *data);
 void render_surface(struct wlr_surface *surface, int sx, int sy, void *data);
 void render_clients(struct ewlc_output *o, struct timespec *now);
 void resize(struct ewlc_client *c, int x, int y, int w, int h, int interact);
 struct ewlc_client *get_active_client(struct ewlc_server *s);
 void set_floating(struct ewlc_client *c, int floating);
 void set_output(struct ewlc_client *c, struct ewlc_output *o);
+void surface_unmap_notify(struct wl_listener *listener, void *data);
 struct ewlc_client *get_client_at_point(struct ewlc_server *s, double x, double y);
 void apply_title(struct ewlc_client *c, struct ewlc_output *active_output);
 void scale_box(struct wlr_box *box, float scale);
 
 #ifdef XWAYLAND
+void xwayland_surface_request_activate_notify(struct wl_listener *listener,
+                                              void *data);
+void new_xwayland_surface_notify(struct wl_listener *listener, void *data);
 void render_independents(struct ewlc_server *s, struct wlr_output *output,
                          struct timespec *now);
 struct ewlc_client *get_independent_at_point(struct ewlc_server *s,double x, double y);
 Atom get_atom(xcb_connection_t *xc, const char *name);
-
-void xwayland_surface_request_activate_notify(struct wl_listener *listener,void *data);
-void new_xwayland_surface_notify(struct wl_listener *listener, void *data);
-
-void xwayland_surface_request_activate_handler(struct wl_listener *listener,void *data);
-void new_xwayland_surface_handler(struct wl_listener *listener, void *data);
-
 #endif
-
-void xdg_surface_commit_notify(struct wl_listener *listener, void *data);
-void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data);
-void surface_map_notify(struct wl_listener *listener, void *data);
-void surface_unmap_notify(struct wl_listener *listener, void *data);
-void surface_destroy_notify(struct wl_listener *listener, void *data);
-
-void xdg_surface_commit_handler(struct wl_listener *listener, void *data);
-void xdg_shell_new_surface_handler(struct wl_listener *listener, void *data);
-void surface_map_handler(struct wl_listener *listener, void *data);
-void surface_unmap_handler(struct wl_listener *listener, void *data);
-void surface_destroy_handler(struct wl_listener *listener, void *data);
 
 #endif // __CLIENT_H_

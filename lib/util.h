@@ -57,7 +57,6 @@ enum ewlc_events {
     EWLC_NEW_X_SURFACE
 };
 
-
 struct ewlc_keyboard;
 
 struct key_node {
@@ -73,11 +72,6 @@ struct event_node {
     void *data;
     int type;
     struct event_node *next;
-};
-
-struct list_node {
-    void *data;
-    struct list_node *next;
 };
 
 struct key_node *create_node(uint32_t mods,
