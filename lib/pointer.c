@@ -233,11 +233,12 @@ void cursor_motion_handler(struct wl_listener *listener, void *data)
     free(event);
 }
 
-void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
+void seat_request_set_cursor_handler(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the seat when a client provides a cursor image */
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
     struct ewlc_server *s = wl_container_of(listener, s, seat_request_set_cursor_listener);
+    INFO(">>>");
     /* If we're "grabbing" the cursor, don't use the client's image */
     /* XXX still need to save the provided surface to restore later */
     if (s->cursor_mode != CUR_NORMAL)
@@ -247,10 +248,17 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
      * use the provided surface as the cursor image. It will set the
      * hardware cursor on the output that it's currently on and continue to
      * do so as the cursor moves between outputs. */
+    DEBUG("event: %p", event);
+    DEBUG("event surface: %p", event->surface);
+    DEBUG("event surface: %p", event->surface->resource);
+    DEBUG("event hotspot_x: %d", event->hotspot_x);
+    DEBUG("event hotspot_y: %d", event->hotspot_y);
+
     if (event->seat_client == s->seat->pointer_state.focused_client)
         wlr_cursor_set_surface(s->cursor, event->surface, event->hotspot_x,
                                event->hotspot_y);
-    // free(event);
+    free(event);
+    INFO("<<<");
 }
 
 void seat_request_set_primary_selection_handler(struct wl_listener *listener,
@@ -463,21 +471,30 @@ void cursor_motion_notify(struct wl_listener *listener, void *data)
     s->event_list = add_event(s->event_list, e);
 }
 
-/* void seat_request_set_cursor_notify(struct wl_listener *listener, void *data) */
-/* { */
-/*     /\* This event is raised by the seat when a client provides a cursor image *\/ */
+void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is raised by the seat when a client provides a cursor image */
 
-/*     struct ewlc_server *s; */
-/*     struct event_node *e; */
-/*     struct wlr_seat_pointer_request_set_cursor_event *event = data; */
-/*     struct wlr_seat_pointer_request_set_cursor_event *event_cpy */
-/*         = calloc(1, sizeof(*event_cpy)); */
+    struct ewlc_server *s;
+    struct event_node *e;
+    struct wlr_seat_pointer_request_set_cursor_event *event = data;
+    struct wlr_seat_pointer_request_set_cursor_event *event_cpy
+        = calloc(1, sizeof(*event_cpy));
+    INFO(">>>");
 
-/*     event_cpy->surface = event->surface; */
-/*     event_cpy->hotspot_x = event->hotspot_x; */
-/*     event_cpy->hotspot_y = event->hotspot_y; */
+    event_cpy->surface = event->surface;
+    event_cpy->hotspot_x = event->hotspot_x;
+    event_cpy->hotspot_y = event->hotspot_y;
+    event_cpy->seat_client = event->seat_client;
 
-/*     s = wl_container_of(listener, s, seat_request_set_cursor_listener); */
-/*     e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_CURSOR); */
-/*     s->event_list = add_event(s->event_list, e); */
-/* } */
+    DEBUG("event: %p", event_cpy);
+    DEBUG("event surface: %p", event_cpy->surface);
+    DEBUG("event surface: %p", event_cpy->surface->resource);
+    DEBUG("event hotspot_x: %d", event_cpy->hotspot_x);
+    DEBUG("event hotspot_y: %d", event_cpy->hotspot_y);
+
+    s = wl_container_of(listener, s, seat_request_set_cursor_listener);
+    e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_CURSOR);
+    s->event_list = add_event(s->event_list, e);
+    INFO("<<<");
+}
