@@ -458,7 +458,7 @@ void set_output(struct ewlc_client *c, struct ewlc_output *o)
     DEBUG("s = '%p'", s);
     DEBUG("old_c = '%p'", old_c);
 
-    if (old_output == o) {
+    if (o == NULL || old_output == o) {
         fprintf(stderr, "return-1: set_output\n");
         return;
     }
@@ -508,24 +508,6 @@ void surface_unmap_handler(struct wl_listener *listener, void *data)
     arrange(c->output);
     c_new_focus = focus_top(s->active_output);
     focus_client(NULL, c_new_focus, 1);
-    INFO("<<<");
-}
-
-void surface_unmap_handler_safe(struct wl_listener *listener, void *data)
-{
-    /* Called when the surface is unmapped, and should no longer be shown. */
-    struct ewlc_client *c = wl_container_of(listener, c, surface_unmap_listener);
-    INFO(">>>");
-    //    INFO("SURFACE_UNMAP_NOTIFY");
-    INFO("SURFACE_UNMAP_HANDLER");
-    wl_list_remove(&c->client_link);
-    set_output(c, NULL);
-#ifdef XWAYLAND
-    if (c->type == X11_UNMANAGED)
-        return;
-#endif
-    wl_list_remove(&c->client_focus_link);
-    wl_list_remove(&c->client_stack_link);
     INFO("<<<");
 }
 

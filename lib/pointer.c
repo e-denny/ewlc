@@ -223,6 +223,7 @@ void cursor_motion_handler(struct wl_listener *listener, void *data)
      * pointer motion event (i.e. a delta) */
     struct wlr_event_pointer_motion *event = data;
     struct ewlc_server *s = wl_container_of(listener, s, cursor_motion_listener);
+
     /* The cursor doesn't move unless we tell it to. The cursor automatically
      * handles constraining the motion to the output layout, as well as any
      * special configuration applied for the specific input device which
@@ -238,11 +239,12 @@ void seat_request_set_cursor_handler(struct wl_listener *listener, void *data)
     /* This event is raised by the seat when a client provides a cursor image */
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
     struct ewlc_server *s = wl_container_of(listener, s, seat_request_set_cursor_listener);
-    INFO(">>>");
+
     /* If we're "grabbing" the cursor, don't use the client's image */
     /* XXX still need to save the provided surface to restore later */
     if (s->cursor_mode != CUR_NORMAL)
         return;
+
     /* This can be sent by any client, so we check to make sure this one is
      * actually has pointer focus first. If so, we can tell the cursor to
      * use the provided surface as the cursor image. It will set the
@@ -258,7 +260,6 @@ void seat_request_set_cursor_handler(struct wl_listener *listener, void *data)
         wlr_cursor_set_surface(s->cursor, event->surface, event->hotspot_x,
                                event->hotspot_y);
     free(event);
-    INFO("<<<");
 }
 
 void seat_request_set_primary_selection_handler(struct wl_listener *listener,
@@ -269,20 +270,12 @@ void seat_request_set_primary_selection_handler(struct wl_listener *listener,
      * compositors to ignore such requests if they so choose, but we always
      * honor
      */
-    struct wlr_seat_request_set_primary_selection_event *event;
+    struct wlr_seat_request_set_primary_selection_event *event = data;
     struct ewlc_server *s;
-    INFO(">>>");
 
     s = wl_container_of(listener, s, seat_request_set_primary_selection_listener);
-    DEBUG("s: %p", s);
-    DEBUG("seat %p", s->seat);
-    event = data;
-    DEBUG("event: %p", event);
-    DEBUG("event source: %p", event->source);
-    DEBUG("event serial: %d", event->serial);
     wlr_seat_set_primary_selection(s->seat, event->source, event->serial);
     free(event);
-    INFO("<<<");
 }
 
 void seat_request_set_selection_handler(struct wl_listener *listener, void *data)
@@ -293,8 +286,9 @@ void seat_request_set_selection_handler(struct wl_listener *listener, void *data
      * honor
      */
     struct wlr_seat_request_set_selection_event *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s,
-                                             seat_request_set_selection_listener);
+    struct ewlc_server *s;
+
+    s = wl_container_of(listener, s, seat_request_set_selection_listener);
     wlr_seat_set_selection(s->seat, event->source, event->serial);
     free(event);
 }
@@ -312,20 +306,17 @@ void move_resize(struct ewlc_server *s, const Arg *arg)
         s->grabc_x = s->cursor->x - s->grabbed_client->geom.x;
         s->grabc_y = s->cursor->y - s->grabbed_client->geom.y;
 
-        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr,
-                                             "fleur",
-                                             s->cursor);
+        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "fleur", s->cursor);
         break;
     case CUR_RESIZE:
         /* Doesn't work for X11 output - the next absolute motion event
          * returns the cursor to where it started */
-        wlr_cursor_warp_closest(
-            s->cursor, NULL,
-            s->grabbed_client->geom.x + s->grabbed_client->geom.width,
-            s->grabbed_client->geom.y + s->grabbed_client->geom.height);
+        wlr_cursor_warp_closest(s->cursor,
+                                NULL,
+                                s->grabbed_client->geom.x + s->grabbed_client->geom.width,
+                                s->grabbed_client->geom.y + s->grabbed_client->geom.height);
 
-        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr,
-                                             "bottom_right_corner",
+        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "bottom_right_corner",
                                              s->cursor);
         break;
     }
@@ -341,27 +332,17 @@ void seat_request_set_primary_selection_notify(struct wl_listener *listener,
 
     struct ewlc_server *s;
     struct event_node *e;
-    struct wlr_seat_request_set_primary_selection_event *evt;
-    struct wlr_seat_request_set_primary_selection_event *evt_2 = calloc(1, sizeof(*evt_2));
-
-    INFO(">>>");
+    struct wlr_seat_request_set_primary_selection_event *event = data;
+    struct wlr_seat_request_set_primary_selection_event *event_cpy =
+        calloc(1, sizeof(*event_cpy));
 
     s = wl_container_of(listener, s, seat_request_set_primary_selection_listener);
-    DEBUG("s: %p", s);
-    DEBUG("seat %p", s->seat);
-    evt = (struct wlr_seat_request_set_primary_selection_event *)data;
 
-    DEBUG("event: %p", evt);
-    DEBUG("event source: %p", evt->source);
-    DEBUG("event serial: %d", evt->serial);
-    evt_2->serial = evt->serial;
-    evt_2->source = evt->source;
-    DEBUG("event source: %p", evt_2->source);
-    DEBUG("event serial: %d", evt_2->serial);
+    event_cpy->serial = event->serial;
+    event_cpy->source = event->source;
 
-    e = create_event(listener, (void *)evt_2, EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION);
+    e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION);
     s->event_list = add_event(s->event_list, e);
-    INFO("<<<");
 }
 
 void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
@@ -372,7 +353,8 @@ void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
     struct ewlc_server *s;
     struct event_node *e_node;
     struct wlr_seat_request_set_selection_event *event = data;
-    struct wlr_seat_request_set_selection_event *event_cpy = calloc(1, sizeof(*event_cpy));;
+    struct wlr_seat_request_set_selection_event *event_cpy = calloc(1, sizeof(*event_cpy));
+
     event_cpy->serial = event->serial;
     event_cpy->source = event->source;
 
@@ -480,21 +462,13 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
     struct wlr_seat_pointer_request_set_cursor_event *event_cpy
         = calloc(1, sizeof(*event_cpy));
-    INFO(">>>");
 
     event_cpy->surface = event->surface;
     event_cpy->hotspot_x = event->hotspot_x;
     event_cpy->hotspot_y = event->hotspot_y;
     event_cpy->seat_client = event->seat_client;
 
-    DEBUG("event: %p", event_cpy);
-    DEBUG("event surface: %p", event_cpy->surface);
-    DEBUG("event surface: %p", event_cpy->surface->resource);
-    DEBUG("event hotspot_x: %d", event_cpy->hotspot_x);
-    DEBUG("event hotspot_y: %d", event_cpy->hotspot_y);
-
     s = wl_container_of(listener, s, seat_request_set_cursor_listener);
     e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_CURSOR);
     s->event_list = add_event(s->event_list, e);
-    INFO("<<<");
 }
