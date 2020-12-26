@@ -58,10 +58,8 @@ void arrange(struct ewlc_output *o)
     /* XXX recheck pointer focus here... or in resize()? */
 }
 
-void output_destroy_notify(struct wl_listener *listener, void *data)
+void output_destroy_handler(struct wl_listener *listener, void *data)
 {
-    // struct wlr_output *wlr_output = data;
-    // struct ewlc_output *o = wlr_output->data;
     struct ewlc_output *o = wl_container_of(listener, o, output_destroy_listener);
 
     wl_list_remove(&o->output_destroy_listener.link);
@@ -150,7 +148,7 @@ struct ewlc_output *set_next_output(int direction, struct ewlc_server *s)
     return o;
 }
 
-void output_frame_notify(struct wl_listener *listener, void *data)
+void output_frame_handler(struct wl_listener *listener, void *data)
 {
     struct ewlc_client *c;
     struct ewlc_server *s;
@@ -255,11 +253,38 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the backend when a new output (aka a display or
      * output) becomes available. */
+
     struct ewlc_server *s;
     struct event_node *e;
-    INFO("    >>>");
+
     s = wl_container_of(listener, s, backend_new_output_listener);
     e = create_event(listener, data, EWLC_BACKEND_NEW_OUTPUT);
     s->event_list = add_event(s->event_list, e);
-    INFO("    <<<");
+}
+
+void output_destroy_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s;
+    struct ewlc_output *o;
+    struct event_node *e;
+
+    o = wl_container_of(listener, o, output_destroy_listener);
+    s = o->server;
+    e = create_event(listener, data, EWLC_OUTPUT_DESTROY);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void output_frame_notify(struct wl_listener *listener, void *data)
+{
+    /* This function is called every time an output is ready to display a frame,
+     * generally at the output's refresh rate (e.g. 60Hz). */
+
+    struct ewlc_output *o;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    o = wl_container_of(listener, o, output_frame_listener);
+    s = o->server;
+    e = create_event(listener, data, EWLC_OUTPUT_FRAME);
+    s->event_list = add_event(s->event_list, e);
 }

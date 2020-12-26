@@ -428,68 +428,75 @@ int handle_events(struct ewlc_server *srv)
     void *data;
     int type;
     int handled;
-    INFO(">>>>>");
-    DEBUG("srv: %p", srv);
 
     while (srv->event_list != NULL) {
         handled = 0;
         listener = srv->event_list->listener;
-        DEBUG("listener: %p", listener);
         data = srv->event_list->data;
-        DEBUG("data: %p", data);
         type = srv->event_list->type;
-        DEBUG("%p, %p, %d", listener, data, type);
 
         switch (type) {
-        /* case EWLC_CURSOR_AXIS: */
-        /*     cursor_axis_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_CURSOR_BUTTON: */
-        /*     cursor_button_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_CURSOR_MOTION: */
-        /*     cursor_motion_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_CURSOR_FRAME: */
-        /*     cursor_frame_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_CURSOR_MOTION_ABSOLUTE: */
-        /*     cursor_motion_absolute_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_SEAT_REQUEST_SET_CURSOR: */
-        /*     seat_request_set_cursor_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION: */
-        /*     seat_request_set_primary_selection_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_SEAT_REQUEST_SET_SELECTION: */
-        /*     seat_request_set_selection_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
+        case EWLC_CURSOR_AXIS:
+            INFO("EWLC_CURSOR_AXIS");
+            cursor_axis_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_BUTTON:
+            INFO("EWLC_CURSOR_BUTTON");
+            cursor_button_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_MOTION:
+            INFO("EWLC_CURSOR_MOTION");
+            cursor_motion_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_FRAME:
+            INFO("EWLC_CURSOR_FRAME");
+            cursor_frame_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_CURSOR_MOTION_ABSOLUTE:
+            INFO("EWLC_CURSOR_MOTION_ABSOLUTE");
+            cursor_motion_absolute_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SEAT_REQUEST_SET_CURSOR:
+            INFO("EWLC_SEAT_REQUEST_SET_CURSOR");
+            seat_request_set_cursor_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION:
+            INFO("EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION");
+            seat_request_set_primary_selection_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SEAT_REQUEST_SET_SELECTION:
+            INFO("EWLC_SEAT_REQUEST_SET_SELECTION");
+            seat_request_set_selection_handler(listener, data);
+            handled = 1;
+            break;
 
-        /* case EWLC_KEYBOARD_DESTROY: */
-        /*     keyboard_destroy_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_BACKEND_NEW_INPUT: */
-        /*     backend_new_input_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_KEYBOARD_KEY: */
-        /*     keyboard_key_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_KEYBOARD_MODIFIERS: */
-        /*     keyboard_modifiers_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
+        case EWLC_KEYBOARD_DESTROY:
+            INFO("EWLC_KEYBOARD_DESTROY");
+            keyboard_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_BACKEND_NEW_INPUT:
+            INFO("EWLC_BACKEND_NEW_INPUT");
+            backend_new_input_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_KEYBOARD_KEY:
+            INFO("EWLC_KEYBOARD_KEY");
+            keyboard_key_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_KEYBOARD_MODIFIERS:
+            INFO("EWLC_KEYBOARD_MODIFIERS");
+            keyboard_modifiers_handler(listener, data);
+            handled = 1;
+            break;
 
 
         /* case EWLC_XWAYLAND_READY: */
@@ -510,48 +517,58 @@ int handle_events(struct ewlc_server *srv)
         /*     break; */
 
 
-        /* case EWLC_OUTPUT_DESTROY: */
-        /*     output_destroy_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_OUTPUT_FRAME: */
-        /*     output_frame_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
+        case EWLC_OUTPUT_DESTROY:
+            INFO("EWLC_OUTPUT_DESTROY");
+            output_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_OUTPUT_FRAME:
+            INFO("EWLC_OUTPUT_FRAME");
+            output_frame_handler(listener, data);
+            handled = 1;
+            break;
         case EWLC_BACKEND_NEW_OUTPUT:
+            INFO("EWLC_BACKEND_NEW_OUTPUT");
             backend_new_output_handler(listener, data);
             handled = 1;
             break;
 
 
-        /* case EWLC_XDG_SURFACE_COMMIT: */
-        /*     xdg_surface_commit_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_XDG_SHELL_NEW_SURFACE: */
-        /*     xdg_shell_new_surface_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_SURFACE_DESTROY: */
-        /*     surface_destroy_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_SURFACE_MAP: */
-        /*     surface_map_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_SURFACE_UNMAP: */
-        /*     surface_unmap_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_X_SURFACE_REQUEST_ACTIVATE: */
-        /*     xwayland_surface_request_activate_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_NEW_X_SURFACE: */
-        /*     new_xwayland_surface_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
+        case EWLC_XDG_SURFACE_COMMIT:
+            INFO("EWLC_XDG_SURFACE_COMMIT");
+            xdg_surface_commit_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_XDG_SHELL_NEW_SURFACE:
+            INFO("EWLC_XDG_SHELL_NEW_SURFACE");
+            xdg_shell_new_surface_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SURFACE_DESTROY:
+            INFO("EWLC_SURFACE_DESTROY");
+            surface_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SURFACE_MAP:
+            INFO("EWLC_SURFACE_MAP");
+            surface_map_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_SURFACE_UNMAP:
+            INFO("EWLC_SURFACE_UNMAP");
+            surface_unmap_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_X_SURFACE_REQUEST_ACTIVATE:
+            INFO("EWLC_X_SURFACE_REQUEST_ACTIVATE");
+            xwayland_surface_request_activate_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_NEW_X_SURFACE:
+            INFO("EWLC_NEW_X_SURFACE");
+            new_xwayland_surface_handler(listener, data);
+            handled = 1;
+            break;
         }
 
         if (handled == 0) {
@@ -561,6 +578,5 @@ int handle_events(struct ewlc_server *srv)
 
         srv->event_list = remove_event(srv->event_list);
     }
-    INFO("<<<<<<");
     return handled;
 }

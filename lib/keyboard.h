@@ -27,4 +27,9 @@ void keyboard_key_notify(struct wl_listener *listener, void *data);
 void keyboard_modifiers_notify(struct wl_listener *listener, void *data);
 void backend_new_input_notify(struct wl_listener *listener, void *data);
 
+void keyboard_destroy_handler(struct wl_listener *listener, void *data);
+void keyboard_key_handler(struct wl_listener *listener, void *data);
+void keyboard_modifiers_handler(struct wl_listener *listener, void *data);
+void backend_new_input_handler(struct wl_listener *listener, void *data);
+
 #endif // __KEYBOARD_H_

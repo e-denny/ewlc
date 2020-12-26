@@ -112,7 +112,7 @@ void apply_title(struct ewlc_client *c, struct ewlc_output *active_output)
     INFO("leaving");
 }
 
-void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
+void xdg_surface_commit_handler(struct wl_listener *listener, void *data)
 {
     struct ewlc_client *c = wl_container_of(listener, c, surface_commit_listener);
 
@@ -122,7 +122,7 @@ void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
 }
 
 // TODO: assign an output to a new client?
-void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
+void xdg_shell_new_surface_handler(struct wl_listener *listener, void *data)
 {
     /* This event is raised when wlr_xdg_shell receives a new xdg surface from a
      * client, either a toplevel (application window) or popup. */
@@ -162,10 +162,11 @@ void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
     wl_signal_add(&xdg_surface->events.destroy, &c->surface_destroy_listener);
 }
 
-void surface_destroy_notify(struct wl_listener *listener, void *data)
+void surface_destroy_handler(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is destroyed and should never be shown again. */
     struct ewlc_client *c = wl_container_of(listener, c, surface_destroy_listener);
+    INFO(">>>");
 
     wl_list_remove(&c->surface_map_listener.link);
     wl_list_remove(&c->surface_unmap_listener.link);
@@ -177,6 +178,7 @@ void surface_destroy_notify(struct wl_listener *listener, void *data)
 #endif
         wl_list_remove(&c->surface_commit_listener.link);
     free(c);
+    INFO("<<<");
 }
 
 struct ewlc_client *focus_top(struct ewlc_output *o)
@@ -190,7 +192,7 @@ struct ewlc_client *focus_top(struct ewlc_output *o)
     return NULL;
 }
 
-void surface_map_notify(struct wl_listener *listener, void *data)
+void surface_map_handler(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
     struct ewlc_client *c = wl_container_of(listener, c, surface_map_listener);
@@ -465,6 +467,8 @@ void set_output(struct ewlc_client *c, struct ewlc_output *o)
 
     /* XXX leave/enter is not optimal but works */
     if (old_output) {
+        DEBUG("surface = '%p'", get_surface(c));
+        DEBUG("wlr_output = '%p'", old_output->wlr_output);
         wlr_surface_send_leave(get_surface(c), old_output->wlr_output);
         arrange(old_output);
     }
@@ -484,18 +488,45 @@ void set_output(struct ewlc_client *c, struct ewlc_output *o)
     INFO("leaving");
 }
 
-void surface_unmap_notify(struct wl_listener *listener, void *data)
+void surface_unmap_handler(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is unmapped, and should no longer be shown. */
     struct ewlc_client *c = wl_container_of(listener, c, surface_unmap_listener);
+    struct ewlc_server *s = c->server;
+    struct ewlc_client *c_new_focus;
+    INFO(">>>");
+    //    INFO("SURFACE_UNMAP_NOTIFY");
+    INFO("SURFACE_UNMAP_HANDLER");
     wl_list_remove(&c->client_link);
+    // set_output(c, NULL);
 #ifdef XWAYLAND
     if (c->type == X11_UNMANAGED)
         return;
 #endif
-    set_output(c, NULL);
     wl_list_remove(&c->client_focus_link);
     wl_list_remove(&c->client_stack_link);
+    arrange(c->output);
+    c_new_focus = focus_top(s->active_output);
+    focus_client(NULL, c_new_focus, 1);
+    INFO("<<<");
+}
+
+void surface_unmap_handler_safe(struct wl_listener *listener, void *data)
+{
+    /* Called when the surface is unmapped, and should no longer be shown. */
+    struct ewlc_client *c = wl_container_of(listener, c, surface_unmap_listener);
+    INFO(">>>");
+    //    INFO("SURFACE_UNMAP_NOTIFY");
+    INFO("SURFACE_UNMAP_HANDLER");
+    wl_list_remove(&c->client_link);
+    set_output(c, NULL);
+#ifdef XWAYLAND
+    if (c->type == X11_UNMANAGED)
+        return;
+#endif
+    wl_list_remove(&c->client_focus_link);
+    wl_list_remove(&c->client_stack_link);
+    INFO("<<<");
 }
 
 struct ewlc_client *get_client_at_point(struct ewlc_server *s, double x, double y)
@@ -593,6 +624,7 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
 #endif
             wlr_xdg_toplevel_set_activated(old->surface.xdg, 0);
     }
+    INFO("check-1");
 
     /* Update wlroots' keyboard focus */
     if (!c) {
@@ -601,6 +633,7 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
         INFO("return-2");
         return;
     }
+    INFO("check-2");
 
     /* Have a client, so focus its top-level wlr_surface */
     wlr_seat_keyboard_notify_enter(s->seat, get_surface(c), kb->keycodes,
@@ -610,6 +643,7 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
     wl_list_remove(&c->client_focus_link);
     wl_list_insert(&s->client_focus_list, &c->client_focus_link);
     s->active_output = c->output;
+    INFO("check-3");
 
     /* Activate the new client */
 #ifdef XWAYLAND
@@ -618,12 +652,13 @@ void focus_client(struct ewlc_client *old, struct ewlc_client *c, int lift)
     else
 #endif
         wlr_xdg_toplevel_set_activated(c->surface.xdg, 1);
+    INFO("check-4");
     INFO("leaving");
 }
 
 #ifdef XWAYLAND
 
-void xwayland_surface_request_activate_notify(struct wl_listener *listener, void *data)
+void xwayland_surface_request_activate_handler(struct wl_listener *listener, void *data)
 {
     struct ewlc_client *c = wl_container_of(listener, c,
                                             xwayland_surface_request_activate_listener);
@@ -633,7 +668,7 @@ void xwayland_surface_request_activate_notify(struct wl_listener *listener, void
         wlr_xwayland_surface_activate(c->surface.xwayland, 1);
 }
 
-void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
+void new_xwayland_surface_handler(struct wl_listener *listener, void *data)
 {
     struct wlr_xwayland_surface *xwayland_surface = data;
     struct ewlc_client *c;
@@ -720,3 +755,90 @@ struct ewlc_client *get_independent_at_point(struct ewlc_server *s, double x, do
     return NULL;
 }
 #endif
+
+// ----------------------------------------------------------------------
+
+void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_client *c;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    c = wl_container_of(listener, c, surface_commit_listener);
+    s = c->server;
+    e = create_event(listener, data, EWLC_XDG_SURFACE_COMMIT);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is raised when wlr_xdg_shell receives a new xdg surface from a
+     * client, either a toplevel (application window) or popup. */
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    s = wl_container_of(listener, s, xdg_shell_new_surface_listener);
+    e = create_event(listener, data, EWLC_XDG_SHELL_NEW_SURFACE);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void surface_destroy_notify(struct wl_listener *listener, void *data)
+{
+    /* Called when the surface is destroyed and should never be shown again. */
+    struct ewlc_client *c;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    c = wl_container_of(listener, c, surface_destroy_listener);
+    s = c->server;
+    e = create_event(listener, data, EWLC_SURFACE_DESTROY);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void surface_map_notify(struct wl_listener *listener, void *data)
+{
+    /* Called when the surface is mapped, or ready to display on-screen. */
+    struct ewlc_client *c;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    c = wl_container_of(listener, c, surface_map_listener);
+    s = c->server;
+    e = create_event(listener, data, EWLC_SURFACE_MAP);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void surface_unmap_notify(struct wl_listener *listener, void *data)
+{
+    /* Called when the surface is unmapped, and should no longer be shown. */
+    struct ewlc_client *c;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    c = wl_container_of(listener, c, surface_unmap_listener);
+    s = c->server;
+    e = create_event(listener, data, EWLC_SURFACE_UNMAP);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void xwayland_surface_request_activate_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_client *c;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    c = wl_container_of(listener, c, xwayland_surface_request_activate_listener);
+    s = c->server;
+    e = create_event(listener, data, EWLC_X_SURFACE_REQUEST_ACTIVATE);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    s = wl_container_of(listener, s, new_xwayland_surface_listener);
+    e = create_event(listener, data, EWLC_NEW_X_SURFACE);
+    s->event_list = add_event(s->event_list, e);
+}

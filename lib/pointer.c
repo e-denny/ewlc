@@ -50,7 +50,7 @@
 #include <wlr/xwayland.h>
 #endif
 
-void cursor_axis_notify(struct wl_listener *listener, void *data)
+void cursor_axis_handler(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an axis event,
      * for example when you move the scroll wheel. */
@@ -60,9 +60,10 @@ void cursor_axis_notify(struct wl_listener *listener, void *data)
     wlr_seat_pointer_notify_axis(s->seat, event->time_msec,
                                  event->orientation, event->delta,
                                  event->delta_discrete, event->source);
+    free(event);
 }
 
-void cursor_button_notify(struct wl_listener *listener, void *data)
+void cursor_button_handler(struct wl_listener *listener, void *data)
 {
     struct wlr_event_pointer_button *event = data;
     struct ewlc_server *s = wl_container_of(listener, s, cursor_button_listener);
@@ -83,6 +84,7 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
             if (CLEANMASK(mods) == CLEANMASK(b->mod) &&
                 event->button == b->button && b->func) {
                 b->func(s, &b->arg);
+                free(event);
                 return;
             }
         }
@@ -96,9 +98,9 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
             s->cursor_mode = CUR_NORMAL;
             /* Drop the window off on its new output */
             /* change output if necessary */
-            s->active_output =
-                get_output_at_point(s, s->cursor->x, s->cursor->y);
+            s->active_output = get_output_at_point(s, s->cursor->x, s->cursor->y);
             set_output(s->grabbed_client, s->active_output);
+            free(event);
             return;
         }
         break;
@@ -107,6 +109,7 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
      * pointer focus that a button press has occurred */
     wlr_seat_pointer_notify_button(s->seat, event->time_msec, event->button,
                                    event->state);
+    free(event);
 }
 
 void create_pointer(struct ewlc_server *srv, struct wlr_input_device *device)
@@ -124,7 +127,7 @@ void create_pointer(struct ewlc_server *srv, struct wlr_input_device *device)
     wlr_cursor_attach_input_device(srv->cursor, device);
 }
 
-void cursor_frame_notify(struct wl_listener *listener, void *data)
+void cursor_frame_handler(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an frame
      * event. Frame events are sent after regular pointer events to group
@@ -136,7 +139,7 @@ void cursor_frame_notify(struct wl_listener *listener, void *data)
     wlr_seat_pointer_notify_frame(s->seat);
 }
 
-void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
+void cursor_motion_absolute_handler(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an _absolute_
      * motion event, from 0..1 on each axis. This happens, for example, when
@@ -149,6 +152,7 @@ void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
 
     wlr_cursor_warp_absolute(s->cursor, event->device, event->x, event->y);
     motion_notify(s, event->time_msec);
+    free(event);
 }
 
 void motion_notify(struct ewlc_server *s, uint32_t time)
@@ -213,7 +217,7 @@ void motion_notify(struct ewlc_server *s, uint32_t time)
     pointer_focus(c, surface, sx, sy, time);
 }
 
-void cursor_motion_notify(struct wl_listener *listener, void *data)
+void cursor_motion_handler(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits a _relative_
      * pointer motion event (i.e. a delta) */
@@ -224,9 +228,9 @@ void cursor_motion_notify(struct wl_listener *listener, void *data)
      * special configuration applied for the specific input device which
      * generated the event. You can pass NULL for the device if you want to move
      * the cursor around without any input. */
-    wlr_cursor_move(s->cursor, event->device, event->delta_x,
-                    event->delta_y);
+    wlr_cursor_move(s->cursor, event->device, event->delta_x, event->delta_y);
     motion_notify(s, event->time_msec);
+    free(event);
 }
 
 void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
@@ -246,9 +250,10 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
     if (event->seat_client == s->seat->pointer_state.focused_client)
         wlr_cursor_set_surface(s->cursor, event->surface, event->hotspot_x,
                                event->hotspot_y);
+    // free(event);
 }
 
-void seat_request_set_primary_selection_notify(struct wl_listener *listener,
+void seat_request_set_primary_selection_handler(struct wl_listener *listener,
                                                void *data)
 {
     /* This event is raised by the seat when a client wants to set the
@@ -256,13 +261,23 @@ void seat_request_set_primary_selection_notify(struct wl_listener *listener,
      * compositors to ignore such requests if they so choose, but we always
      * honor
      */
-    struct wlr_seat_request_set_primary_selection_event *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s,
-                                             seat_request_set_primary_selection_listener);
+    struct wlr_seat_request_set_primary_selection_event *event;
+    struct ewlc_server *s;
+    INFO(">>>");
+
+    s = wl_container_of(listener, s, seat_request_set_primary_selection_listener);
+    DEBUG("s: %p", s);
+    DEBUG("seat %p", s->seat);
+    event = data;
+    DEBUG("event: %p", event);
+    DEBUG("event source: %p", event->source);
+    DEBUG("event serial: %d", event->serial);
     wlr_seat_set_primary_selection(s->seat, event->source, event->serial);
+    free(event);
+    INFO("<<<");
 }
 
-void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
+void seat_request_set_selection_handler(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the seat when a client wants to set the
      * selection, usually when the user copies something. wlroots allows
@@ -273,6 +288,7 @@ void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
     struct ewlc_server *s = wl_container_of(listener, s,
                                              seat_request_set_selection_listener);
     wlr_seat_set_selection(s->seat, event->source, event->serial);
+    free(event);
 }
 
 void move_resize(struct ewlc_server *s, const Arg *arg)
@@ -306,3 +322,162 @@ void move_resize(struct ewlc_server *s, const Arg *arg)
         break;
     }
 }
+
+// ----------------------------------------------------------------------
+
+void seat_request_set_primary_selection_notify(struct wl_listener *listener,
+                                               void *data)
+{
+    /* This event is raised by the seat when a client wants to set the
+     * selection, usually when the user copies something. */
+
+    struct ewlc_server *s;
+    struct event_node *e;
+    struct wlr_seat_request_set_primary_selection_event *evt;
+    struct wlr_seat_request_set_primary_selection_event *evt_2 = calloc(1, sizeof(*evt_2));
+
+    INFO(">>>");
+
+    s = wl_container_of(listener, s, seat_request_set_primary_selection_listener);
+    DEBUG("s: %p", s);
+    DEBUG("seat %p", s->seat);
+    evt = (struct wlr_seat_request_set_primary_selection_event *)data;
+
+    DEBUG("event: %p", evt);
+    DEBUG("event source: %p", evt->source);
+    DEBUG("event serial: %d", evt->serial);
+    evt_2->serial = evt->serial;
+    evt_2->source = evt->source;
+    DEBUG("event source: %p", evt_2->source);
+    DEBUG("event serial: %d", evt_2->serial);
+
+    e = create_event(listener, (void *)evt_2, EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION);
+    s->event_list = add_event(s->event_list, e);
+    INFO("<<<");
+}
+
+void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is raised by the seat when a client wants to set the
+     * selection, usually when the user copies something. */
+
+    struct ewlc_server *s;
+    struct event_node *e_node;
+    struct wlr_seat_request_set_selection_event *event = data;
+    struct wlr_seat_request_set_selection_event *event_cpy = calloc(1, sizeof(*event_cpy));;
+    event_cpy->serial = event->serial;
+    event_cpy->source = event->source;
+
+    s = wl_container_of(listener, s, seat_request_set_selection_listener);
+    e_node = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_SELECTION);
+    s->event_list = add_event(s->event_list, e_node);
+}
+
+void cursor_axis_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is forwarded by the cursor when a pointer emits an axis event,
+     * for example when you move the scroll wheel. */
+    struct ewlc_server *s;
+    struct event_node *e;
+    struct wlr_event_pointer_axis *event = data;
+    struct wlr_event_pointer_axis *event_cpy = calloc(1, sizeof(*event_cpy));;
+
+    event_cpy->time_msec = event->time_msec;
+    event_cpy->orientation = event->orientation;
+    event_cpy->delta = event->delta;
+    event_cpy->delta_discrete = event->delta_discrete;
+    event_cpy->source = event->source;
+
+    s = wl_container_of(listener, s, cursor_axis_listener);
+    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_AXIS);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void cursor_button_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s;
+    struct event_node *e;
+    struct wlr_event_pointer_button *event = data;
+    struct wlr_event_pointer_button *event_cpy = calloc(1, sizeof(*event_cpy));
+
+    event_cpy->time_msec = event->time_msec;
+    event_cpy->button = event->button;
+    event_cpy->state = event->state;
+
+    s = wl_container_of(listener, s, cursor_button_listener);
+    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_BUTTON);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void cursor_frame_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    s = wl_container_of(listener, s, cursor_frame_listener);
+    e = create_event(listener, data, EWLC_CURSOR_FRAME);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is forwarded by the cursor when a pointer emits an _absolute_
+     * motion event, from 0..1 on each axis. This happens, for example, when
+     * wlroots is running under a Wayland window rather than KMS+DRM, and you
+     * move the mouse over the window. You could enter the window from any edge,
+     * so we have to warp the mouse there. There is also some hardware which
+     * emits these events. */
+
+    struct ewlc_server *s;
+    struct event_node *e;
+    struct wlr_event_pointer_motion_absolute *event = data;
+    struct wlr_event_pointer_motion_absolute *event_cpy = calloc(1, sizeof(*event_cpy));
+
+    event_cpy->time_msec = event->time_msec;
+    event_cpy->device = event->device;
+    event_cpy->x = event->x;
+    event_cpy->y = event->y;
+
+    s = wl_container_of(listener, s, cursor_motion_absolute_listener);
+    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_MOTION_ABSOLUTE);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void cursor_motion_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is forwarded by the cursor when a pointer emits a _relative_
+     * pointer motion event (i.e. a delta) */
+
+    struct ewlc_server *s;
+    struct event_node *e;
+    struct wlr_event_pointer_motion *event = data;
+    struct wlr_event_pointer_motion *event_cpy = calloc(1, sizeof(*event_cpy));
+
+    event_cpy->time_msec = event->time_msec;
+    event_cpy->device = event->device;
+    event_cpy->delta_x = event->delta_x;
+    event_cpy->delta_y = event->delta_y;
+
+    s = wl_container_of(listener, s, cursor_motion_listener);
+    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_MOTION);
+    s->event_list = add_event(s->event_list, e);
+}
+
+/* void seat_request_set_cursor_notify(struct wl_listener *listener, void *data) */
+/* { */
+/*     /\* This event is raised by the seat when a client provides a cursor image *\/ */
+
+/*     struct ewlc_server *s; */
+/*     struct event_node *e; */
+/*     struct wlr_seat_pointer_request_set_cursor_event *event = data; */
+/*     struct wlr_seat_pointer_request_set_cursor_event *event_cpy */
+/*         = calloc(1, sizeof(*event_cpy)); */
+
+/*     event_cpy->surface = event->surface; */
+/*     event_cpy->hotspot_x = event->hotspot_x; */
+/*     event_cpy->hotspot_y = event->hotspot_y; */
+
+/*     s = wl_container_of(listener, s, seat_request_set_cursor_listener); */
+/*     e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_CURSOR); */
+/*     s->event_list = add_event(s->event_list, e); */
+/* } */

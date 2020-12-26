@@ -52,7 +52,7 @@
 
 const struct xkb_rule_names xkb_rules = {0};
 
-void keyboard_destroy_notify(struct wl_listener *listener, void *data)
+void keyboard_destroy_handler(struct wl_listener *listener, void *data)
 {
     /* struct wlr_input_device *device = data; */
     struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_destroy_listener);
@@ -71,17 +71,21 @@ void create_keyboard(struct ewlc_server *srv, struct wlr_input_device *device)
     kb = device->data = calloc(1, sizeof(*kb));
 
     kb->device = device;
+    DEBUG("  device = '%p'", device);
     kb->server = srv;
+    DEBUG("  srv = '%p'", srv);
     kb->e_env = srv->e_env;
 
     /* Prepare an XKB keymap and assign it to the keyboard. */
     context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    DEBUG("  context = '%p'", context);
     keymap = xkb_map_new_from_names(context, &xkb_rules,
                                     XKB_KEYMAP_COMPILE_NO_FLAGS);
-
+    DEBUG("  keymap = '%p'", keymap);
     wlr_keyboard_set_keymap(device->keyboard, keymap);
     xkb_keymap_unref(keymap);
     xkb_context_unref(context);
+    DEBUG("  keyboard = '%p'", device->keyboard);
 
     wlr_keyboard_set_repeat_info(device->keyboard, srv->repeat_rate, srv->repeat_delay);
 
@@ -102,7 +106,7 @@ void create_keyboard(struct ewlc_server *srv, struct wlr_input_device *device)
     INFO("leave");
 }
 
-void backend_new_input_notify(struct wl_listener *listener, void *data)
+void backend_new_input_handler(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the backend when a new input device becomes
      * available. */
@@ -134,6 +138,7 @@ void backend_new_input_notify(struct wl_listener *listener, void *data)
     if (!wl_list_empty(&srv->keyboard_list))
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
     wlr_seat_set_capabilities(srv->seat, caps);
+
     INFO("leave");
 }
 
@@ -149,13 +154,19 @@ void keyboard_key_notify(struct wl_listener *listener, void *data)
     const xkb_keysym_t *syms;
     int nsyms;
     uint32_t mods;
+    INFO(">>>");
     DEBUG("srv = '%p'", srv);
 
-    // e_message(kb->e_env, "into: keyboard_key_notify");
+    DEBUG("event: %p", event);
+    DEBUG("keycode = '%d'", event->keycode);
+    DEBUG("state = '%d'", event->state);
+    DEBUG("time = '%d'", event->time_msec);
 
     nsyms = xkb_state_key_get_syms(kb->device->keyboard->xkb_state,
                                        keycode, &syms);
+    DEBUG("nsyms = '%d'", nsyms);
     mods = wlr_keyboard_get_modifiers(kb->device->keyboard);
+    DEBUG("mods = '%d'", mods);
 
     /* On _press_ and mod, and to list to check if a compositor keybinding. */
     if (event->state == WLR_KEY_PRESSED &&
@@ -166,18 +177,22 @@ void keyboard_key_notify(struct wl_listener *listener, void *data)
             DEBUG("i: %d", i);
             srv->key_list = add_to_end(srv->key_list, mods, syms[i], kb, event);
         }
-        INFO("return");
+        INFO("<<<return");
         return;
     }
 
     /* Pass non-modifier keycodes straight to the client. */
+    DEBUG("seat = '%p'", srv->seat);
+    DEBUG("device = '%p'", kb->device);
+
     wlr_seat_set_keyboard(srv->seat, kb->device);
     wlr_seat_keyboard_notify_key(srv->seat, event->time_msec,
                                  event->keycode, event->state);
-    INFO("leaving");
+    INFO("<<<");
+    // free(event);
 }
 
-void keyboard_modifiers_notify(struct wl_listener *listener, void *data)
+void keyboard_modifiers_handler(struct wl_listener *listener, void *data)
 {
     /* This event is raised when a modifier key, such as shift or alt, is
      * pressed. We simply communicate this to the client. */
@@ -194,4 +209,68 @@ void keyboard_modifiers_notify(struct wl_listener *listener, void *data)
     /* Send modifiers to the client. */
     wlr_seat_keyboard_notify_modifiers(srv->seat, &kb->device->keyboard->modifiers);
     INFO("leaving");
+}
+
+// ----------------------------------------------------------------------
+
+void keyboard_destroy_notify(struct wl_listener *listener, void *data)
+{
+    /* struct wlr_input_device *device = data; */
+    struct ewlc_keyboard *kb;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    kb = wl_container_of(listener, kb, keyboard_destroy_listener);
+    s = kb->server;
+    e = create_event(listener, data, EWLC_KEYBOARD_DESTROY);
+    s->event_list = add_event(s->event_list, e);
+}
+
+void backend_new_input_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    s = wl_container_of(listener, s, backend_new_input_listener);
+    e = create_event(listener, data, EWLC_BACKEND_NEW_INPUT);
+    s->event_list = add_event(s->event_list, e);
+}
+
+/* void keyboard_key_notify(struct wl_listener *listener, void *data) */
+/* { */
+/*     struct ewlc_keyboard *kb; */
+/*     struct ewlc_server *s; */
+/*     struct event_node *e_node; */
+/*     struct wlr_event_keyboard_key *event = data; */
+/*     struct wlr_event_keyboard_key *event_cpy = calloc(1, sizeof(*event_cpy)); */
+
+/*     INFO(">>>"); */
+/*     event_cpy->keycode = event->keycode; */
+/*     event_cpy->state = event->state; */
+/*     event_cpy->time_msec = event->time_msec; */
+
+/*     DEBUG("event: %p", event_cpy); */
+/*     DEBUG("event keycode: %d", event_cpy->keycode); */
+/*     DEBUG("event state: %d", event_cpy->state); */
+/*     DEBUG("event time: %d", event_cpy->time_msec); */
+
+/*     kb = wl_container_of(listener, kb, keyboard_key_listener); */
+/*     s = kb->server; */
+/*     e_node = create_event(listener, (void *)event_cpy, EWLC_KEYBOARD_KEY); */
+/*     s->event_list = add_event(s->event_list, e_node); */
+/*     INFO("<<<"); */
+/* } */
+
+void keyboard_modifiers_notify(struct wl_listener *listener, void *data)
+{
+    /* This event is raised when a modifier key, such as shift or alt, is
+     * pressed. We simply communicate this to the client. */
+    struct ewlc_keyboard *kb;
+    struct ewlc_server *s;
+    struct event_node *e;
+
+    kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
+    s = kb->server;
+    e = create_event(listener, data, EWLC_KEYBOARD_MODIFIERS);
+    s->event_list = add_event(s->event_list, e);
 }
