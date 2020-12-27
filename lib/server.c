@@ -52,10 +52,14 @@
 #include <wlr/xwayland.h>
 #endif
 
-void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void *data)
+void xdeco_mgr_new_toplevel_decoration_handler(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
     struct ewlc_decoration *d = wlr_deco->data = calloc(1, sizeof(*d));
+    struct ewlc_server *s;
+
+    s = wl_container_of(listener, s, xdeco_mgr_new_top_level_decoration_listener);
+    d->server = s;
 
     d->deco_request_mode_listener.notify = deco_request_mode_notify;
     wl_signal_add(&wlr_deco->events.request_mode, &d->deco_request_mode_listener);
@@ -66,7 +70,7 @@ void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void
     deco_request_mode_notify(&d->deco_request_mode_listener, wlr_deco);
 }
 
-void deco_destroy_notify(struct wl_listener *listener, void *data)
+void deco_destroy_handler(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
     struct ewlc_decoration *d = wlr_deco->data;
@@ -76,7 +80,7 @@ void deco_destroy_notify(struct wl_listener *listener, void *data)
     free(d);
 }
 
-void deco_request_mode_notify(struct wl_listener *listener, void *data)
+void deco_request_mode_handler(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
     wlr_xdg_toplevel_decoration_v1_set_mode(
@@ -108,7 +112,7 @@ void update_window_type(struct ewlc_client *c)
             c->is_floating = 1;
 }
 
-void xwayland_ready_notify(struct wl_listener *listener, void *data)
+void xwayland_ready_handler(struct wl_listener *listener, void *data)
 {
     struct ewlc_server *srv = wl_container_of(listener, srv, xwayland_ready_listener);
     xcb_connection_t *xc = xcb_connect(srv->xwayland->display_name, NULL);
@@ -499,22 +503,22 @@ int handle_events(struct ewlc_server *srv)
             break;
 
 
-        /* case EWLC_XWAYLAND_READY: */
-        /*     xwayland_ready_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_DECO_REQUEST_MODE: */
-        /*     deco_request_mode_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_DECO_DESTROY: */
-        /*     deco_destroy_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
-        /* case EWLC_NEW_TOPLEVEL_DECORATION: */
-        /*     xdeco_mgr_new_toplevel_decoration_handler(listener, data); */
-        /*     handled = 1; */
-        /*     break; */
+        case EWLC_XWAYLAND_READY:
+            xwayland_ready_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_DECO_REQUEST_MODE:
+            deco_request_mode_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_DECO_DESTROY:
+            deco_destroy_handler(listener, data);
+            handled = 1;
+            break;
+        case EWLC_NEW_TOPLEVEL_DECORATION:
+            xdeco_mgr_new_toplevel_decoration_handler(listener, data);
+            handled = 1;
+            break;
 
 
         case EWLC_OUTPUT_DESTROY:
@@ -579,4 +583,49 @@ int handle_events(struct ewlc_server *srv)
         srv->event_list = remove_event(srv->event_list);
     }
     return handled;
+}
+
+// ----------------------------------------------------------------------
+
+void xwayland_ready_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s = wl_container_of(listener, s, xwayland_ready_listener);
+    struct event_node *e_node;
+
+    e_node = create_event(listener, data, EWLC_XWAYLAND_READY);
+    s->event_list = add_event(s->event_list, e_node);
+}
+
+void deco_request_mode_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_decoration *d;
+    struct ewlc_server *s;
+    struct event_node *e_node;
+
+    d = wl_container_of(listener, d, deco_request_mode_listener);
+    s = d->server;
+    e_node = create_event(listener, data, EWLC_DECO_REQUEST_MODE);
+    s->event_list = add_event(s->event_list, e_node);
+}
+
+void deco_destroy_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_decoration *d;
+    struct ewlc_server *s;
+    struct event_node *e_node;
+
+    d = wl_container_of(listener, d, deco_destroy_listener);
+    s = d->server;
+    e_node = create_event(listener, data, EWLC_DECO_DESTROY);
+    s->event_list = add_event(s->event_list, e_node);
+}
+
+void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_server *s;
+    struct event_node *e_node;
+
+    s = wl_container_of(listener, s, xdeco_mgr_new_top_level_decoration_listener);
+    e_node = create_event(listener, data, EWLC_NEW_TOPLEVEL_DECORATION);
+    s->event_list = add_event(s->event_list, e_node);
 }

@@ -133,6 +133,7 @@ struct ewlc_server {
 };
 
 struct ewlc_decoration {
+    struct ewlc_server *server;
     struct wl_listener deco_request_mode_listener;
     struct wl_listener deco_destroy_listener;
 };
