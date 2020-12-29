@@ -149,7 +149,7 @@ void ewlc_setup(struct ewlc_server *srv);
 struct ewlc_server *ewlc_start(emacs_env *env);
 int ewlc_cleanup(struct ewlc_server *srv);
 int ewlc_display_dispatch(struct ewlc_server *srv);
-int handle_events(struct ewlc_server *srv);
+int handle_events(emacs_env *env, struct ewlc_server *srv);
 
 #ifdef XWAYLAND
 void xwayland_ready_notify(struct wl_listener *listener, void *data);

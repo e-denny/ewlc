@@ -20,15 +20,14 @@
 ;;; Code:
 
 (module-load "/home/edgar/Projects/ewlc/lib/ewlc.so")
+(load "/home/edgar/Projects/ewlc/src/ewlc-server.el")
 
-;; (require ewlc)
 (require 'cl-lib)
+(require 'ewlc-server)
 
 (defvar *ewlc-thread* nil "The thread running the wayland event loop.")
 
-(defvar *ewlc-running* nil "Is the wayland compositor running?")
-
-(defvar *ewlc-server* nil "The wayland compositor server.")
+(defvar *ewlc* nil "The wayland compositor server.")
 
 (defvar ewlc-keymap-prefix "C-," "The ewlc keymap prefix.")
 
@@ -44,15 +43,15 @@
 
 (defun new-focus-client (curr-client next-client restack)
   "Change focus from CURR-CLIENT to NEXT-CLIENT with possible RESTACK."
-  (let ((client-stack-list (ewlc/c--get-stack-list *ewlc-server*))
-        (client-focus-list (ewlc/c--get-focus-list *ewlc-server*)))
+  (let ((client-stack-list (ewlc/c--get-stack-list (ewlc-server *ewlc*)))
+        (client-focus-list (ewlc/c--get-focus-list (ewlc-server *ewlc*))))
     (when next-client
       (when restack
         (setq client-stack-list (move-client-to-front next-client client-stack-list))
-        (ewlc/c--set-stack-list *ewlc-server* client-stack-list))
+        (ewlc/c--set-stack-list (ewlc-server *ewlc*) client-stack-list))
       (when (not (client= curr-client next-client))
         (setq client-focus-list (move-client-to-front next-client client-focus-list))
-        (ewlc/c--set-focus-list *ewlc-server* client-focus-list)))
+        (ewlc/c--set-focus-list (ewlc-server *ewlc*) client-focus-list)))
     (when (not (client= curr-client next-client))
       (ewlc/c--focus-client curr-client next-client))))
 
@@ -74,54 +73,55 @@
 ;; replacement function
 (defun new-focus-next-client ()
   "Focus next client."
-  (let ((curr-client (ewlc/c--get-active-client *ewlc-server*))
+  (let ((curr-client (ewlc/c--get-active-client (ewlc-server *ewlc*)))
         next-client
-        (client-list (ewlc/c--get-client-list *ewlc-server*))
-        (curr-output (ewlc/c--get-active-output *ewlc-server*)))
-    (when curr-client
+        (client-list (ewlc/c--get-client-list (ewlc-server *ewlc*)))
+        (curr-output (ewlc/c--get-active-output (ewlc-server *ewlc*))))
+    (when (and curr-client curr-output)
       (setq next-client (get-next-visible curr-client curr-output client-list))
-      (new-focus-client curr-client next-client t))))
+      (when next-client
+        (new-focus-client curr-client next-client t)))))
 
 
 (defun wc-focus-next-client ()
   "Focus next client."
-  (ewlc-focus-next-client *ewlc-server* 1))
+  (ewlc-focus-next-client (ewlc-server *ewlc*) 1))
 
 (defun wc-focus-prev-client ()
   "Focus previous client."
-  (ewlc-focus-next-client *ewlc-server* -1))
+  (ewlc-focus-next-client (ewlc-server *ewlc*) -1))
 
 (defun wc-add-master ()
   "Add a master."
-  (ewlc-add-master *ewlc-server* 1))
+  (ewlc-add-master (ewlc-server *ewlc*) 1))
 
 (defun wc-remove-master ()
   "Remove a master."
-  (ewlc-add-master *ewlc-server* -1))
+  (ewlc-add-master (ewlc-server *ewlc*) -1))
 
 (defun wc-incr-master-ratio ()
   "Inrement master ratio."
-  (ewlc-set-master-ratio *ewlc-server* 0.05))
+  (ewlc-set-master-ratio (ewlc-server *ewlc*) 0.05))
 
 (defun wc-decr-master-ratio ()
   "Decrement master ratio."
-  (ewlc-set-master-ratio *ewlc-server* -0.05))
+  (ewlc-set-master-ratio (ewlc-server *ewlc*) -0.05))
 
 (defun wc-kill-client ()
   "Kill the active client."
-  (ewlc-kill-client *ewlc-server*))
+  (ewlc-kill-client (ewlc-server *ewlc*)))
 
 (defun wc-zoom ()
   "Zoom the active client."
-  (ewlc-zoom *ewlc-server*))
+  (ewlc-zoom (ewlc-server *ewlc*)))
 
 (defun wc-toggle-floating ()
   "Zoom the active client."
-  (ewlc-toggle-floating *ewlc-server*))
+  (ewlc-toggle-floating (ewlc-server *ewlc*)))
 
 (defun wc-view ()
   "Zoom the active client."
-  (ewlc-view *ewlc-server*))
+  (ewlc-view (ewlc-server *ewlc*)))
 
 (defun wc-spawn (cmd args)
   "Spawn an application CMD with the arguments ARGS."
@@ -129,12 +129,12 @@
 
 (defun exit-wc ()
   "Exit the wayland compositor."
-  (ewlc-cleanup *ewlc-server*)
-  (setq *ewlc-running* nil))
+  (ewlc-cleanup (ewlc-server *ewlc*))
+  (setf (ewlc-running-p *ewlc*) nil))
 
 (defun wc-quit ()
   "Kill the window manager."
-  (ewlc-quit *ewlc-server*)
+  (ewlc-quit (ewlc-server *ewlc*))
   (exit-wc))
 
 (defun terminal ()
@@ -171,33 +171,41 @@
 ;;   :keymap ewlc-keymap-prefix
 ;;   :global defun)
 
+
+
 (defun start-wc ()
   "Start the wayland compositor."
-  (setq *ewlc-server* (ewlc-start))
-  (setq *ewlc-running* t)
+  (setq *ewlc* (make-ewlc :server (ewlc-start)
+                          :keyboard-list nil
+                          :output-list nil
+                          :client-list nil
+                          :running-p t))
   (setq *ewlc-thread* (make-thread
                        (lambda ()
-                         (while *ewlc-running*
+                         (while (ewlc-running-p *ewlc*)
                            ;; dispatch queued wayland events.
-                           (ewlc-handle-events *ewlc-server*)
-                           (ewlc-handle-keybindings *ewlc-server*)
-                           (ewlc-display-dispatch *ewlc-server*)
+                           (ewlc-handle-events (ewlc-server *ewlc*))
+                           (ewlc-handle-keybindings (ewlc-server *ewlc*))
+                           (ewlc-display-dispatch (ewlc-server *ewlc*))
                            (sleep-for 0.01)))
                        "loop-thread")))
 
 
 (defun wm-loop ()
   "Dispatch wayland events."
-  (ewlc-display-dispatch *ewlc-server*)
-  (ewlc-handle-keybindings *ewlc-server*))
+  (ewlc-handle-events (ewlc-server *ewlc*))
+  (ewlc-handle-keybindings (ewlc-server *ewlc*))
+  (ewlc-display-dispatch (ewlc-server *ewlc*)))
 
 (defun start-wc-new()
-  "Start the wayland compositor."
-  (setq *ewlc-server* (ewlc-start))
-  (setq *ewlc-running* t)
-  (ewlc-display-dispatch *ewlc-server*)
-  (run-at-time 0 0.01 #'wm-loop)
-  )
+ "Start the wayland compositor."
+ (setq *ewlc* (make-ewlc :server (ewlc-start)
+                                 :keyboard-list nil
+                                 :output-list nil
+                                 :client-list nil
+                                 :running-p t))
+  (ewlc-display-dispatch (ewlc-server *ewlc*))
+  (run-at-time 0 0.01 #'wm-loop))
 
 (defun ewlc-apply-keybinding (mod key)
   "Apply the keybings for MOD and KEY."

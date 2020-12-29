@@ -319,6 +319,8 @@ struct ewlc_server *ewlc_start(emacs_env *env)
     INFO("into");
     srv->e_env = env;
 
+    e_message(srv->e_env, "ewlc_start: into");
+
     // Wayland requires XDG_RUNTIME_DIR for creating its communications
     // socket
     if (!getenv("XDG_RUNTIME_DIR"))
@@ -360,7 +362,7 @@ struct ewlc_server *ewlc_start(emacs_env *env)
         ERROR("startup: backend_start");
 
     // loop over backend events to make sure all input and outputs are created.
-    handle_events(srv);
+    handle_events(env, srv);
 
     /* Now that outputs are initialized, choose initial active_output based on
      * cursor position, and set default cursor image */
@@ -425,7 +427,7 @@ int ewlc_display_dispatch(struct ewlc_server *srv)
     return 0;
 }
 
-int handle_events(struct ewlc_server *srv)
+int handle_events(emacs_env *env, struct ewlc_server *srv)
 {
 
     struct wl_listener *listener;
@@ -488,6 +490,7 @@ int handle_events(struct ewlc_server *srv)
             break;
         case EWLC_BACKEND_NEW_INPUT:
             INFO("EWLC_BACKEND_NEW_INPUT");
+            e_message(env, "handle_events: new input device");
             backend_new_input_handler(listener, data);
             handled = 1;
             break;
@@ -527,7 +530,7 @@ int handle_events(struct ewlc_server *srv)
             handled = 1;
             break;
         case EWLC_OUTPUT_FRAME:
-            INFO("EWLC_OUTPUT_FRAME");
+            // INFO("EWLC_OUTPUT_FRAME");
             output_frame_handler(listener, data);
             handled = 1;
             break;

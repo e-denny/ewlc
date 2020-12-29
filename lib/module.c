@@ -235,7 +235,7 @@ emacs_value Fewlc_handle_events(emacs_env *env, ptrdiff_t nargs,
     int handled;
 
     srv = env->get_user_ptr(env, args[0]);
-    handled = handle_events(srv);
+    handled = handle_events(env, srv);
     if (handled == 1)
         return Qt;
     return Qnil;

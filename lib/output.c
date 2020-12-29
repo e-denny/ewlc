@@ -178,8 +178,7 @@ void output_frame_handler(struct wl_listener *listener, void *data)
     if (render) {
         /* Begin the renderer (calls glViewport and some other GL sanity checks)
          */
-        wlr_renderer_begin(s->renderer, o->wlr_output->width,
-                           o->wlr_output->height);
+        wlr_renderer_begin(s->renderer, o->wlr_output->width, o->wlr_output->height);
         wlr_renderer_clear(s->renderer, s->root_color);
 
         render_clients(o, &now);
