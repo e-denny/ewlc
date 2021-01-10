@@ -429,11 +429,13 @@ int ewlc_display_dispatch(struct ewlc_server *srv)
 
 int handle_events(emacs_env *env, struct ewlc_server *srv)
 {
-
     struct wl_listener *listener;
+    struct wlr_input_device *device;
+    struct ewlc_keyboard *kb;
     void *data;
     int type;
     int handled;
+    emacs_value e_listener, e_data, e_kb, e_device;
 
     while (srv->event_list != NULL) {
         handled = 0;
@@ -444,12 +446,24 @@ int handle_events(emacs_env *env, struct ewlc_server *srv)
         switch (type) {
         case EWLC_CURSOR_AXIS:
             INFO("EWLC_CURSOR_AXIS");
-            cursor_axis_handler(listener, data);
+
+            e_data = env->make_user_ptr(env, NULL, data);
+
+            env->funcall(env, env->intern(env, "ewlc-pointer-axis-handler"),
+                         1, (emacs_value[]){e_data});
+
+            // cursor_axis_handler(listener, data);
             handled = 1;
             break;
         case EWLC_CURSOR_BUTTON:
             INFO("EWLC_CURSOR_BUTTON");
-            cursor_button_handler(listener, data);
+
+            e_data = env->make_user_ptr(env, NULL, data);
+
+            env->funcall(env, env->intern(env, "ewlc-pointer-button-handler"),
+                         1, (emacs_value[]){e_data});
+
+            // cursor_button_handler(listener, data);
             handled = 1;
             break;
         case EWLC_CURSOR_MOTION:
@@ -485,13 +499,26 @@ int handle_events(emacs_env *env, struct ewlc_server *srv)
 
         case EWLC_KEYBOARD_DESTROY:
             INFO("EWLC_KEYBOARD_DESTROY");
-            keyboard_destroy_handler(listener, data);
+
+            kb = wl_container_of(listener, kb, keyboard_destroy_listener);
+            e_kb = env->make_user_ptr(env, NULL, kb);
+
+            env->funcall(env, env->intern(env, "ewlc-keyboard-destroy-handler"),
+                         1, (emacs_value[]){e_kb});
+
+            // keyboard_destroy_handler(listener, data);
             handled = 1;
             break;
         case EWLC_BACKEND_NEW_INPUT:
             INFO("EWLC_BACKEND_NEW_INPUT");
-            e_message(env, "handle_events: new input device");
-            backend_new_input_handler(listener, data);
+
+            device = data;
+            e_device = env->make_user_ptr(env, NULL, device);
+
+            env->funcall(env, env->intern(env, "ewlc-new-input-handler"),
+                         1, (emacs_value[]){e_device});
+
+            // backend_new_input_handler(listener, data);
             handled = 1;
             break;
         case EWLC_KEYBOARD_KEY:
@@ -501,7 +528,14 @@ int handle_events(emacs_env *env, struct ewlc_server *srv)
             break;
         case EWLC_KEYBOARD_MODIFIERS:
             INFO("EWLC_KEYBOARD_MODIFIERS");
-            keyboard_modifiers_handler(listener, data);
+
+            kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
+            e_kb = env->make_user_ptr(env, NULL, kb);
+
+            env->funcall(env, env->intern(env, "ewlc-keyboard-modifiers-handler"),
+                         1, (emacs_value[]){e_kb});
+
+            // keyboard_modifiers_handler(listener, data);
             handled = 1;
             break;
 

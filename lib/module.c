@@ -12,6 +12,9 @@
 
 emacs_value Qt;
 emacs_value Qnil;
+emacs_value Qkeyboard;
+emacs_value Qpointer;
+
 emacs_value Flist;
 emacs_value Flength;
 emacs_value Fnth;
@@ -407,18 +410,16 @@ emacs_value Fewlc_is_visible_on(emacs_env *env, ptrdiff_t nargs,
 emacs_value Fewlc_focus_client(emacs_env *env, ptrdiff_t nargs,
                                emacs_value args[], void *data)
 {
-
     struct ewlc_client *c_curr;
     struct ewlc_client *c_next;
 
-    INFO(">>>");
     c_curr = env->get_user_ptr(env, args[0]);
     c_next = env->get_user_ptr(env, args[1]);
 
     e_focus_client(c_curr, c_next);
-    INFO("<<<");
     return Qnil;
 }
+
 /*------------------------------------------------------------------------*/
 
 /* Bind NAME to FUN.  */
@@ -450,6 +451,9 @@ int emacs_module_init(struct emacs_runtime *ert)
     /* symbols */
     Qt = env->make_global_ref(env, env->intern(env, "t"));
     Qnil = env->make_global_ref(env, env->intern(env, "nil"));
+    Qkeyboard = env->make_global_ref(env, env->intern(env, "keyboard"));
+    Qpointer = env->make_global_ref(env, env->intern(env, "pointer"));
+
     Flist = env->make_global_ref(env, env->intern(env, "list"));
     Flength = env->make_global_ref(env, env->intern(env, "length"));
     Fnth = env->make_global_ref(env, env->intern(env, "nth"));
@@ -558,6 +562,30 @@ int emacs_module_init(struct emacs_runtime *ert)
     func = env->make_function(env, 2, 2, Fewlc_compare_clients,
                               "Compare clients.", NULL);
     bind_function(env, "ewlc/c--client=", func);
+
+    /* ------------------------------------------------------------ */
+
+    func = env->make_function(env, x, x,
+                              Fewlc_create_pointer,
+                              "Create a pointer.", NULL);
+    bind_function(env, "ewlc--c/create-pointer", func);
+
+    func = env->make_function(env, x, x,
+                              Fewlc_create_keyboard,
+                              "Create a keyboard.", NULL);
+    bind_function(env, "ewlc--c/create-keyboard", func);
+
+    func = env->make_function(env, x, x,
+                              Fewlc_set_seat_capabilities,
+                              "Set the seat's capabilites.", NULL);
+    bind_function(env, "ewlc--c/create-set-seat-capabilites", func);
+
+    func = env->make_function(env, x, x,
+                              Fewlc_get_device_type,
+                              "Get the input device type.", NULL);
+    bind_function(env, "ewlc--c/get-device-type", func);
+
+    /* ------------------------------------------------------------ */
 
     provide(env, "ewlc");
 

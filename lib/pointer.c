@@ -50,276 +50,214 @@
 #include <wlr/xwayland.h>
 #endif
 
-void cursor_axis_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_seat_pointer_notify_axis(emacs_env *env, ptrdiff_t nargs,
+                                          emacs_value args[], void *data)
 {
-    /* This event is forwarded by the cursor when a pointer emits an axis event,
-     * for example when you move the scroll wheel. */
-    struct wlr_event_pointer_axis *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s, cursor_axis_listener);
-    /* Notify the client with pointer focus of the axis event. */
-    wlr_seat_pointer_notify_axis(s->seat, event->time_msec,
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_event_pointer_axis *event = env->get_user_ptr(env, args[1]);
+    wlr_seat_pointer_notify_axis(seat, event->time_msec,
                                  event->orientation, event->delta,
                                  event->delta_discrete, event->source);
-    free(event);
+    return Qt;
 }
 
-void cursor_button_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_get_button_press_state(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
 {
-    struct wlr_event_pointer_button *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s, cursor_button_listener);
+    struct wlr_event_pointer_button *event = env->get_user_ptr(env, args[0]);
+
+    if (event->state == WLR_BUTTON_PRESSED) {
+        return env->intern(env, "pressed");
+    } else if (event->state == WLR_BUTTON_RELEASED) {
+        return env->intern(env, "released");
+    }
+    return Qnil;
+}
+
+
+emacs_value Fwlr_seat_pointer_notify_button(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value args[], void *data)
+{
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_event_pointer_button *event = env->get_user_ptr(env, args[1]);
+
+    wlr_seat_pointer_notify_button(seat, event->time_msec, event->button,
+                                   event->state);
+    return Qt;
+}
+
+emacs_value Fwlr_xcursor_manager_set_cursor_image(emacs_env *env, ptrdiff_t nargs,
+                                                  emacs_value args[], void *data)
+{
+    char* image_text;
+    ptrdiff_t len = 0;
+    struct wlr_xcursor_manager *cursor_mgr = env->get_user_ptr(env, args[0]);
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[2]);
+
+    env->copy_string_contents(env, args[1], NULL, &len);
+    image_text = malloc(sizeof(char) * len);
+    env->copy_string_contents(env, args[1], image_text, &len);
+
+    wlr_xcursor_manager_set_cursor_image(cursor_mgr, image_text, cursor);
+    // FIXME: free image_text?
+}
+
+emacs_value Fewlc_apply_button_action(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_event_pointer_button *event = env->get_user_ptr(env, args[1]);
+
     struct wlr_keyboard *keyboard;
     uint32_t mods;
-    struct ewlc_client *c;
     const Button *b;
 
-    switch (event->state) {
-    case WLR_BUTTON_PRESSED:;
-        /* Change focus if the button was _pressed_ over a client */
-        if ((c = get_client_at_point(s, s->cursor->x, s->cursor->y)))
-            focus_client(get_active_client(s), c, 1);
+    keyboard = wlr_seat_get_keyboard(seat);
+    mods = wlr_keyboard_get_modifiers(keyboard);
 
-        keyboard = wlr_seat_get_keyboard(s->seat);
-        mods = wlr_keyboard_get_modifiers(keyboard);
-        for (b = s->buttons; b < END(s->buttons); b++) {
-            if (CLEANMASK(mods) == CLEANMASK(b->mod) &&
-                event->button == b->button && b->func) {
-                b->func(s, &b->arg);
-                free(event);
-                return;
-            }
+    for (b = s->buttons; b < END(s->buttons); b++) {
+        if (CLEANMASK(mods) == CLEANMASK(b->mod) &&
+            event->button == b->button && b->func) {
+            b->func(s, &b->arg);
+            return Qt;
         }
-        break;
-    case WLR_BUTTON_RELEASED:
-        /* If you released any buttons, we exit interactive move/resize mode. */
-        /* XXX should reset to the pointer focus's current setcursor */
-        if (s->cursor_mode != CUR_NORMAL) {
-            wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "left_ptr",
-                                                 s->cursor);
-            s->cursor_mode = CUR_NORMAL;
-            /* Drop the window off on its new output */
-            /* change output if necessary */
-            s->active_output = get_output_at_point(s, s->cursor->x, s->cursor->y);
-            set_output(s->grabbed_client, s->active_output);
-            free(event);
-            return;
-        }
-        break;
     }
-    /* If the event wasn't handled by the compositor, notify the client with
-     * pointer focus that a button press has occurred */
-    wlr_seat_pointer_notify_button(s->seat, event->time_msec, event->button,
-                                   event->state);
-    free(event);
+    return Qnil;
 }
 
-void create_pointer(struct ewlc_server *srv, struct wlr_input_device *device)
+emacs_value Fewlc_create_pointer(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
 {
-    /* We don't do anything special with pointers. All of our pointer handling
-     * is proxied through wlr_cursor. On another compositor, you might take this
-     * opportunity to do libinput configuration on the device to set
-     * acceleration, etc. */
+    struct wlr_input_device *device;
+    struct wlr_cursor *cursor;
 
-    /* TODO: Fix this */
-    /* srv->buttons[0] = {MODKEY, BTN_LEFT, move_resize, {.ui = CUR_MOVE}}; */
-    /* srv->buttons[1] = {MODKEY, BTN_MIDDLE, ewlc_toggle_floating, {0}}; */
-    /* srv->buttons[2] = {MODKEY, BTN_RIGHT, move_resize, {.ui = CUR_RESIZE}}; */
+    device = env->get_user_ptr(env, args[0]);
+    cursor = env->get_user_ptr(env, args[1]);
 
-    wlr_cursor_attach_input_device(srv->cursor, device);
+    /* TODO: libinput configuration on the device to set acceleration, etc. */
+
+    /* TODO: Handle buttons somewhere, somehow */
+    /* srv->buttons[0] = {MODKEY, BTN_LEFT, move_resize}; */
+    /* srv->buttons[1] = {MODKEY, BTN_MIDDLE, ewlc_toggle_floating}; */
+    /* srv->buttons[2] = {MODKEY, BTN_RIGHT, move_resize}; */
+
+    wlr_cursor_attach_input_device(cursor, device);
+    return Qt;
 }
 
-void cursor_frame_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_seat_pointer_notify_frame(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value args[], void *data)
 {
-    /* This event is forwarded by the cursor when a pointer emits an frame
-     * event. Frame events are sent after regular pointer events to group
-     * multiple events together. For instance, two axis events may happen at the
-     * same time, in which case a frame event won't be sent in between. */
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
     /* Notify the client with pointer focus of the frame event. */
-    struct ewlc_server *s = wl_container_of(listener, s, cursor_frame_listener);
-
-    wlr_seat_pointer_notify_frame(s->seat);
+    wlr_seat_pointer_notify_frame(seat);
+    return Qt;
 }
 
-void cursor_motion_absolute_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_cursor_warp_absolute(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
 {
-    /* This event is forwarded by the cursor when a pointer emits an _absolute_
-     * motion event, from 0..1 on each axis. This happens, for example, when
-     * wlroots is running under a Wayland window rather than KMS+DRM, and you
-     * move the mouse over the window. You could enter the window from any edge,
-     * so we have to warp the mouse there. There is also some hardware which
-     * emits these events. */
-    struct wlr_event_pointer_motion_absolute *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s, cursor_motion_absolute_listener);
-
-    wlr_cursor_warp_absolute(s->cursor, event->device, event->x, event->y);
-    motion_notify(s, event->time_msec);
-    free(event);
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    struct wlr_event_pointer_motion_absolute *event = env->get_user_ptr(env, args[1]);
+    wlr_cursor_warp_absolute(cursor, event->device, event->x, event->y);
+    return Qt;
 }
 
-void motion_notify(struct ewlc_server *s, uint32_t time)
+emacs_value Fewlc_cursor_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
-    double sx = 0, sy = 0;
-    struct wlr_surface *surface = NULL;
-    struct ewlc_client *c;
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, cursor->x);
+}
 
-    /* Update active_output (even while dragging a window) */
-    if (s->sloppyfocus)
-        s->active_output = get_output_at_point(s, s->cursor->x, s->cursor->y);
+emacs_value Fewlc_cursor_y(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, cursor->y);
+}
 
-    /* If we are currently grabbing the mouse, handle and return */
-    if (s->cursor_mode == CUR_MOVE) {
-        /* Move the grabbed client to the new position. */
-        resize(s->grabbed_client, s->cursor->x - s->grabc_x,
-               s->cursor->y - s->grabc_y,
-               s->grabbed_client->geom.width,
-               s->grabbed_client->geom.height, 1);
-        return;
-    } else if (s->cursor_mode == CUR_RESIZE) {
-        resize(s->grabbed_client, s->grabbed_client->geom.x,
-               s->grabbed_client->geom.y,
-               s->cursor->x - s->grabbed_client->geom.x,
-               s->cursor->y - s->grabbed_client->geom.y, 1);
-        return;
+emacs_value Fwlr_box_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, box->x);
+}
+
+emacs_value Fwlr_box_y(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, box->y);
+}
+
+emacs_value Fwlr_box_width(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, box->width);
+}
+
+emacs_value Fwlr_box_height(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, box->height);
+}
+
+emacs_value Fewlc_client_type(emacs_env *env, ptrdiff_t nargs, emacs_value args[],
+                              void *data)
+{
+    struct ewlc_client *client = env->get_user_ptr(env, args[0]);
+    if (client->type == XDG_SHELL) {
+        return env->intern(env, "xdg_shell");
     }
-
-#ifdef XWAYLAND
-    /* Find an independent under the pointer and send the event along. */
-    if ((c = get_independent_at_point(s, s->cursor->x, s->cursor->y))) {
-        surface = wlr_surface_surface_at(
-            c->surface.xwayland->surface,
-            s->cursor->x - c->surface.xwayland->x - c->border_width,
-            s->cursor->y - c->surface.xwayland->y - c->border_width, &sx,
-            &sy);
-
-        /* Otherwise, find the client under the pointer and send the event
-         * along. */
-    } else
-#endif
-        if ((c = get_client_at_point(s, s->cursor->x, s->cursor->y))) {
-#ifdef XWAYLAND
-        if (c->type != XDG_SHELL)
-            surface = wlr_surface_surface_at(
-                c->surface.xwayland->surface,
-                s->cursor->x - c->geom.x - c->border_width,
-                s->cursor->y - c->geom.y - c->border_width, &sx, &sy);
-        else
-#endif
-            surface = wlr_xdg_surface_surface_at(
-                c->surface.xdg, s->cursor->x - c->geom.x - c->border_width,
-                s->cursor->y - c->geom.y - c->border_width, &sx, &sy);
-    }
-    /* If there's no client surface under the cursor, set the cursor image to a
-     * default. This is what makes the cursor image appear when you move it
-     * off of a client or over its border. */
-    if (!surface)
-        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "left_ptr",
-                                             s->cursor);
-
-    pointer_focus(c, surface, sx, sy, time);
+    return env->intern(env, "xwayland");
 }
 
-void cursor_motion_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_cursor_move(emacs_env *env, ptrdiff_t nargs,
+                             emacs_value args[], void *data)
 {
-    /* This event is forwarded by the cursor when a pointer emits a _relative_
-     * pointer motion event (i.e. a delta) */
-    struct wlr_event_pointer_motion *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s, cursor_motion_listener);
-
-    /* The cursor doesn't move unless we tell it to. The cursor automatically
-     * handles constraining the motion to the output layout, as well as any
-     * special configuration applied for the specific input device which
-     * generated the event. You can pass NULL for the device if you want to move
-     * the cursor around without any input. */
-    wlr_cursor_move(s->cursor, event->device, event->delta_x, event->delta_y);
-    motion_notify(s, event->time_msec);
-    free(event);
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    struct wlr_event_pointer_motion *event = env->get_user_ptr(env, args[1]);
+    wlr_cursor_move(cursor, event->device, event->delta_x, event->delta_y);
+    return Qt;
 }
 
-void seat_request_set_cursor_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_cursor_set_surface(emacs_env *env, ptrdiff_t nargs,
+                                     emacs_value args[], void *data)
 {
-    /* This event is raised by the seat when a client provides a cursor image */
-    struct wlr_seat_pointer_request_set_cursor_event *event = data;
-    struct ewlc_server *s = wl_container_of(listener, s, seat_request_set_cursor_listener);
-
-    /* If we're "grabbing" the cursor, don't use the client's image */
-    /* XXX still need to save the provided surface to restore later */
-    if (s->cursor_mode != CUR_NORMAL)
-        return;
-
-    /* This can be sent by any client, so we check to make sure this one is
-     * actually has pointer focus first. If so, we can tell the cursor to
-     * use the provided surface as the cursor image. It will set the
-     * hardware cursor on the output that it's currently on and continue to
-     * do so as the cursor moves between outputs. */
-    DEBUG("event: %p", event);
-    DEBUG("event surface: %p", event->surface);
-    DEBUG("event surface: %p", event->surface->resource);
-    DEBUG("event hotspot_x: %d", event->hotspot_x);
-    DEBUG("event hotspot_y: %d", event->hotspot_y);
-
-    if (event->seat_client == s->seat->pointer_state.focused_client)
-        wlr_cursor_set_surface(s->cursor, event->surface, event->hotspot_x,
-                               event->hotspot_y);
-    free(event);
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    struct wlr_seat *seat = env->get_user_ptr(env, args[1]);
+    struct wlr_seat_pointer_request_set_cursor_event *event =
+        env->get_user_ptr(env, args[2]);
+    if (event->seat_client == seat->pointer_state.focused_client)
+        wlr_cursor_set_surface(cursor, event->surface, event->hotspot_x, event->hotspot_y);
+    return Qt;
 }
 
-void seat_request_set_primary_selection_handler(struct wl_listener *listener,
-                                               void *data)
+emacs_value Fewlc_seat_set_primary_selection(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value args[], void *data)
 {
-    /* This event is raised by the seat when a client wants to set the
-     * selection, usually when the user copies something. wlroots allows
-     * compositors to ignore such requests if they so choose, but we always
-     * honor
-     */
-    struct wlr_seat_request_set_primary_selection_event *event = data;
-    struct ewlc_server *s;
-
-    s = wl_container_of(listener, s, seat_request_set_primary_selection_listener);
-    wlr_seat_set_primary_selection(s->seat, event->source, event->serial);
-    free(event);
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_seat_request_set_primary_selection_event *event =
+        env->get_user_ptr(env, args[1]);
+    wlr_seat_set_primary_selection(seat, event->source, event->serial);
+    return Qt;
 }
 
-void seat_request_set_selection_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_seat_set_selection(emacs_env *env, ptrdiff_t nargs,
+                                     emacs_value args[], void *data)
 {
-    /* This event is raised by the seat when a client wants to set the
-     * selection, usually when the user copies something. wlroots allows
-     * compositors to ignore such requests if they so choose, but we always
-     * honor
-     */
-    struct wlr_seat_request_set_selection_event *event = data;
-    struct ewlc_server *s;
-
-    s = wl_container_of(listener, s, seat_request_set_selection_listener);
-    wlr_seat_set_selection(s->seat, event->source, event->serial);
-    free(event);
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_seat_request_set_selection_event *event = env->get_user_ptr(env, args[1]);
+    wlr_seat_set_selection(seat, event->source, event->serial);
+    return Qt;
 }
 
-void move_resize(struct ewlc_server *s, const Arg *arg)
+emacs_value Fewlc_cursor_warp_closest(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
 {
-    s->grabbed_client = get_client_at_point(s, s->cursor->x, s->cursor->y);
-    if (!s->grabbed_client)
-        return;
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    int x = env->extract_integer(env, args[1]);
+    int y = env->extract_integer(env, args[2]);
 
-    /* Float the window and tell motionnotify to grab it */
-    set_floating(s->grabbed_client, 1);
-    switch (s->cursor_mode = arg->ui) {
-    case CUR_MOVE:
-        s->grabc_x = s->cursor->x - s->grabbed_client->geom.x;
-        s->grabc_y = s->cursor->y - s->grabbed_client->geom.y;
-
-        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "fleur", s->cursor);
-        break;
-    case CUR_RESIZE:
-        /* Doesn't work for X11 output - the next absolute motion event
-         * returns the cursor to where it started */
-        wlr_cursor_warp_closest(s->cursor,
-                                NULL,
-                                s->grabbed_client->geom.x + s->grabbed_client->geom.width,
-                                s->grabbed_client->geom.y + s->grabbed_client->geom.height);
-
-        wlr_xcursor_manager_set_cursor_image(s->cursor_mgr, "bottom_right_corner",
-                                             s->cursor);
-        break;
-    }
+    wlr_cursor_warp_closest(cursor, NULL, x, y);
+    return Qt;
 }
 
 // ----------------------------------------------------------------------

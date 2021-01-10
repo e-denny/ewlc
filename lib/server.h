@@ -97,12 +97,12 @@ struct ewlc_server {
     struct wlr_output_layout *output_layout;
     struct ewlc_output *active_output;
     struct wl_listener backend_new_output_listener;
+    struct wlr_box output_geom;
 
     unsigned int cursor_mode;
 
     struct ewlc_client *grabbed_client;
     int grabc_x, grabc_y; /* client-relative */
-    struct wlr_box output_geom;
 
     struct wlr_xdg_decoration_manager_v1 *xdeco_mgr;
     struct wl_listener xdeco_mgr_new_top_level_decoration_listener;

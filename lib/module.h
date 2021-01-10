@@ -6,6 +6,8 @@
 // Emacs symbols
 extern emacs_value Qt;
 extern emacs_value Qnil;
+extern emacs_value Qkeyboard;
+extern emacs_value Qpointer;
 
 extern emacs_value Fewlc_apply_keybinding;
 void e_message(emacs_env *env, char *msg_str);

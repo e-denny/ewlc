@@ -47,203 +47,193 @@
 #include <wlr/xwayland.h>
 #endif
 
-void arrange(struct ewlc_output *o)
+emacs_value Fewlc_compare_outputs(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
 {
-    /* Get effective output geometry to use for window area */
-    struct ewlc_server *s = o->server;
-
-    o->m = *wlr_output_layout_get_box(s->output_layout, o->wlr_output);
-    o->w = o->m;
-    tile(o);
-    /* XXX recheck pointer focus here... or in resize()? */
+    struct ewlc_output *o_a = env->get_user_ptr(env, args[0]);
+    struct ewlc_output *o_b = env->get_user_ptr(env, args[1]);
+    if (o_a == o_b)
+        return Qt;
+    return Qnil;
 }
 
-void output_destroy_handler(struct wl_listener *listener, void *data)
+emacs_value Fewlc_output_layout_get_box(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
 {
-    struct ewlc_output *o = wl_container_of(listener, o, output_destroy_listener);
+    struct wlr_output *output = env->get_user_ptr(env, args[0]);
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[1]);
+    struct wlr_box *output_box;
 
-    wl_list_remove(&o->output_destroy_listener.link);
-    free(o);
+    output_box = wlr_output_layout_get_box(output_layout, output);
+    return env->make_user_ptr(env, NULL, output_box);
 }
 
-void backend_new_output_handler(struct wl_listener *listener, void *data)
+emacs_value Fewlc_output_set_event_listeners(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value args[], void *data)
 {
-    /* This event is raised by the backend when a new output (aka a display or
-     * output) becomes available. */
-    struct ewlc_server *s = wl_container_of(listener, s, backend_new_output_listener);
-    struct wlr_output *wlr_output = data;
+    struct ewlc_output *e_output = env->get_user_ptr(env, args[0]);
+    struct wlr_output *w_output = env->get_user_ptr(env, args[1]);
+
+    /* Set up event listeners */
+    e_output->output_frame_listener.notify = output_frame_notify;
+    wl_signal_add(&w_output->events.frame, &e_output->output_frame_listener);
+    e_output->output_destroy_listener.notify = output_destroy_notify;
+    wl_signal_add(&w_output->events.destroy, &e_output->output_destroy_listener);
+}
+
+emacs_value Fwlr_output_set_mode(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    struct wlr_output *output = env->get_user_ptr(env, args[0]);
+    struct wlr_output_mode *output_mode = env->get_user_ptr(env, args[1]);
+    wlr_output_set_mode(output, output_mode);
+    return Qt;
+}
+
+emacs_value Fwlr_output_preferred_mode(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
+{
+    struct wlr_output *output = env->get_user_ptr(env, args[0]);
+    struct wlr_output_mode *output_mode = wlr_output_preferred_mode(output);
+    return env->make_user_ptr(env, NULL, output_mode);
+}
+
+emacs_value Fewlc_make_output_ptr(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
+{
     struct ewlc_output *o;
-    struct ewlc_output_rule *r;
-    struct ewlc_output_rule output_rules[] = {
-        /* name       master_ratio num_master scale  rotate/reflect */
-        /* example of a HiDPI laptop monitor:
-           { "eDP-1",    0.5,  1,      2,    WL_OUTPUT_TRANSFORM_NORMAL },
-        */
-        /* defaults */
-        {NULL, 0.5, 1, 1, WL_OUTPUT_TRANSFORM_NORMAL},
-    };
-
-    /* The mode is a tuple of (width, height, refresh rate), and each
-     * output supports only a specific set of modes. We just pick the
-     * output's preferred mode; a more sophisticated compositor would let
-     * the user configure it. */
-    wlr_output_set_mode(wlr_output, wlr_output_preferred_mode(wlr_output));
-
-    /* Allocates and configures output state using configured rules */
+    struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
     o = wlr_output->data = calloc(1, sizeof(*o));
     o->wlr_output = wlr_output;
-    o->server = s;
+    return env->make_user_ptr(env, NULL, o);
+}
 
-    for (r = output_rules; r < END(output_rules); r++) {
-        if (!r->name || strstr(wlr_output->name, r->name)) {
-            o->master_ratio = r->master_ratio;
-            o->num_master = r->num_master;
-            wlr_output_set_scale(wlr_output, r->scale);
-            wlr_xcursor_manager_load(s->cursor_mgr, r->scale);
-            wlr_output_set_transform(wlr_output, r->rr);
-            break;
-        }
-    }
-    /* Set up event listeners */
-    o->output_frame_listener.notify = output_frame_notify;
-    wl_signal_add(&wlr_output->events.frame, &o->output_frame_listener);
-    o->output_destroy_listener.notify = output_destroy_notify;
-    wl_signal_add(&wlr_output->events.destroy, &o->output_destroy_listener);
+emacs_value Fwlr_output_set_scale(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
+{
+    struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
+    float scale = env->extract_float(env, args[1]);
+    wlr_output_set_scale(wlr_output, scale);
+    return Qt;
+}
 
-    wl_list_insert(&s->output_list, &o->output_link);
+emacs_value Fwlr_xcursor_manager_load(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wlr_xcursor_manager *cursor_mgr = env->get_user_ptr(env, args[0]);
+    float scale = env->extract_float(env, args[1]);
+    if (wlr_xcursor_manager_load(cursor_mgr, scale))
+        return Qt;
+    return Qnil;
+}
 
+emacs_value Fwlr_output_set_transform(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
+    // FIXME: add option of other transform enums.
+    wlr_output_set_transform(wlr_output, WL_OUTPUT_TRANSFORM_NORMAL);
+    return Qt;
+}
+
+emacs_value Fwlr_output_enable(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
     wlr_output_enable(wlr_output, 1);
-    if (!wlr_output_commit(wlr_output))
-        return;
-
-    /* Adds this to the output layout. The add_auto function arranges outputs
-     * from left-to-right in the order they appear. A more sophisticated
-     * compositor would let the user configure the arrangement of outputs in the
-     * layout.
-     *
-     * The output layout utility automatically adds a wl_output global to the
-     * display, which Wayland clients can see to find out information about the
-     * output (such as DPI, scale factor, manufacturer, etc).
-     */
-    wlr_output_layout_add_auto(s->output_layout, wlr_output);
-    s->output_geom = *wlr_output_layout_get_box(s->output_layout, NULL);
+    return Qt;
 }
 
-struct ewlc_output *set_next_output(int direction, struct ewlc_server *s)
+emacs_value Fwlr_output_layout_get_box(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
 {
-    struct ewlc_output *o;
-
-    if (direction > 0) {
-        if (s->active_output->output_link.next == &s->output_list) {
-            o = wl_container_of(s->output_list.next, o, output_link);
-        }
-        o = wl_container_of(s->active_output->output_link.next, o, output_link);
-    } else {
-        if (s->active_output->output_link.prev == &s->output_list) {
-            o = wl_container_of(s->output_list.prev, o, output_link);
-        }
-        o = wl_container_of(s->active_output->output_link.prev, o, output_link);
-    }
-    s->active_output = o;
-    return o;
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
+    struct wlr_box *box = wlr_output_layout_get_box(output_layout, NULL);
+    return env->make_user_ptr(env, NULL, box);
 }
 
-void output_frame_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_output_layout_add_auto(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
 {
-    struct ewlc_client *c;
-    struct ewlc_server *s;
-    struct timespec now;
-    int render = 1;
-
-    /* This function is called every time an output is ready to display a frame,
-     * generally at the output's refresh rate (e.g. 60Hz). */
-    struct ewlc_output *o = wl_container_of(listener, o, output_frame_listener);
-    s = o->server;
-
-    clock_gettime(CLOCK_MONOTONIC, &now);
-
-    /* Do not render if any XDG clients have an outstanding resize. */
-    wl_list_for_each(c, &s->client_stack_list, client_stack_link)
-    {
-        if (c->resize) {
-            wlr_surface_send_frame_done(get_surface(c), &now);
-            render = 0;
-        }
-    }
-
-    /* wlr_output_attach_render makes the OpenGL context current. */
-    if (!wlr_output_attach_render(o->wlr_output, NULL))
-        return;
-
-    if (render) {
-        /* Begin the renderer (calls glViewport and some other GL sanity checks)
-         */
-        wlr_renderer_begin(s->renderer, o->wlr_output->width, o->wlr_output->height);
-        wlr_renderer_clear(s->renderer, s->root_color);
-
-        render_clients(o, &now);
-#ifdef XWAYLAND
-        render_independents(s, o->wlr_output, &now);
-#endif
-
-        /* Hardware cursors are rendered by the GPU on a separate plane, and can
-         * be moved around without re-rendering what's beneath them - which is
-         * more efficient. However, not all hardware supports hardware cursors.
-         * For this reason, wlroots provides a software fallback, which we ask
-         * it to render here. wlr_cursor handles configuring hardware vs
-         * software cursors for
-         * you, and this function is a no-op when hardware cursors are in use.
-         */
-        wlr_output_render_software_cursors(o->wlr_output, NULL);
-
-        /* Conclude rendering and swap the buffers, showing the final frame
-         * on-screen. */
-        wlr_renderer_end(s->renderer);
-    }
-
-    wlr_output_commit(o->wlr_output);
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
+    struct wlr_output *output = env->get_user_ptr(env, args[1]);
+    wlr_output_layout_add_auto(output_layout, output);
+    return Qt;
 }
 
-void tile(struct ewlc_output *o)
+emacs_value Fwlr_surface_send_frame_done(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
 {
-    unsigned int i = 0, n = 0, h, mw, my = 0, ty = 0;
-    struct ewlc_server *s = o->server;
-    struct ewlc_client *c;
+    struct wlr_surface *surface = env->get_user_ptr(env, args[0]);
+    // extract_time requires emacs 27
+    struct timespec now = env->extract_time(env, args[1]);
 
-    wl_list_for_each(c, &s->client_list, client_link)
-        if (is_visible_on(c, o) && !c->is_floating)
-            n++;
-
-    if (n == 0)
-        return;
-
-    if (n > o->num_master)
-        mw = o->num_master ? o->w.width * o->master_ratio : 0;
-    else
-        mw = o->w.width;
-
-    wl_list_for_each(c, &s->client_list, client_link)
-    {
-        if (!is_visible_on(c, o) || c->is_floating)
-            continue;
-        if (i < o->num_master) {
-            h = (o->w.height - my) / (MIN(n, o->num_master) - i);
-            resize(c, o->w.x, o->w.y + my, mw, h, 0);
-            my += c->geom.height;
-        } else {
-            h = (o->w.height - ty) / (n - i);
-            resize(c, o->w.x + mw, o->w.y + ty, o->w.width - mw, h, 0);
-            ty += c->geom.height;
-        }
-        i++;
-    }
+    wlr_surface_send_frame_done(surface, &now);
+    return Qt;
 }
 
-struct ewlc_output *get_output_at_point(struct ewlc_server *s, double x, double y)
+emacs_value Fwlr_output_attach_render(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
 {
-    struct wlr_output *o =
-        wlr_output_layout_output_at(s->output_layout, x, y);
-    return o ? o->data : NULL;
+    struct wlr_output *output = env->get_user_ptr(env, args[0]);
+    if (wlr_output_attach_render(output, NULL))
+        return Qt;
+    return Qnil;
+}
+
+emacs_value Fwlr_render_begin(emacs_env *env, ptrdiff_t nargs,
+                              emacs_value args[], void *data)
+{
+    struct wlr_renderer *renderer = env->get_user_ptr(env, args[0]);
+    struct wlr_output *output = env->get_user_ptr(env, args[1]);
+    wlr_renderer_begin(renderer, output->width, output->height))
+    return Qt;
+}
+
+emacs_value Fwlr_render_clear(emacs_env *env, ptrdiff_t nargs,
+                              emacs_value args[], void *data)
+{
+    struct wlr_renderer *renderer = env->get_user_ptr(env, args[0]);
+    float *root_color = env->get_user_ptr(env, args[1]);
+    wlr_renderer_clear(renderer, root_color);
+    return Qt;
+}
+
+emacs_value Fwlr_render_end(emacs_env *env, ptrdiff_t nargs,
+                            emacs_value args[], void *data)
+{
+    struct wlr_renderer *renderer = env->get_user_ptr(env, args[0]);
+    wlr_renderer_end(renderer);
+    return Qt;
+}
+
+emacs_value Fwlr_output_commit(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wlr_output *output = env->get_user_ptr(env, args[0]);
+    if (wlr_output_commit(output))
+        return Qt;
+    return Qnil;
+}
+
+emacs_value Fwlr_output_render_software_cursors(emacs_env *env, ptrdiff_t nargs,
+                                                emacs_value args[], void *data)
+{
+    struct wlr_output *output = env->get_user_ptr(env, args[0]);
+    wlr_output_render_software_cursors(output, NULL);
+    return Qt;
+}
+
+emacs_value Fwlr_output_layout_output_at(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
+{
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[1]);
+    struct wlr_output *o = wlr_output_layout_output_at(output_layout, cursor->x, cursor->y);
+    if (o) {
+        return env->make_user_ptr(env, NULL, o->data);
+    }
+    return Qnil;
 }
 
 // ----------------------------------------------------------------------

@@ -52,94 +52,94 @@
 
 const struct xkb_rule_names xkb_rules = {0};
 
-void keyboard_destroy_handler(struct wl_listener *listener, void *data)
+emacs_value Fewlc_free(emacs_env *env, ptrdiff_t nargs,
+                       emacs_value args[], void *data)
 {
-    /* struct wlr_input_device *device = data; */
-    struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_destroy_listener);
-
-    wl_list_remove(&kb->keyboard_destroy_listener.link);
-    free(kb);
+    free(env->get_user_ptr(env, args[0]));;
+    return Qt;
 }
 
-void create_keyboard(struct ewlc_server *srv, struct wlr_input_device *device)
+emacs_value Fewlc_create_keyboard(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
 {
+    struct wlr_input_device *device;
+    struct wlr_seat *seat;
+    int repeat_rate;
+    int repeat_delay;
+
     struct xkb_context *context;
     struct xkb_keymap *keymap;
     struct ewlc_keyboard *kb;
-    INFO("into");
+    emacs_value
+
+    device = env->get_user_ptr(env, args[0]);
+    seat = env->get_user_ptr(env, args[1]);
+    repeat_rate = env->extract_integer(env, args[2]);
+    repeat_delay = env->extract_integer(env, args[3]);
 
     kb = device->data = calloc(1, sizeof(*kb));
 
     kb->device = device;
-    DEBUG("  device = '%p'", device);
     kb->server = srv;
-    DEBUG("  srv = '%p'", srv);
     kb->e_env = srv->e_env;
 
-    /* Prepare an XKB keymap and assign it to the keyboard. */
+    /* Create an XKB keymap and assign it to the keyboard. */
+
     context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    DEBUG("  context = '%p'", context);
-    keymap = xkb_map_new_from_names(context, &xkb_rules,
-                                    XKB_KEYMAP_COMPILE_NO_FLAGS);
-    DEBUG("  keymap = '%p'", keymap);
+    keymap = xkb_map_new_from_names(context, &xkb_rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
     wlr_keyboard_set_keymap(device->keyboard, keymap);
     xkb_keymap_unref(keymap);
     xkb_context_unref(context);
-    DEBUG("  keyboard = '%p'", device->keyboard);
 
-    wlr_keyboard_set_repeat_info(device->keyboard, srv->repeat_rate, srv->repeat_delay);
+    wlr_keyboard_set_repeat_info(device->keyboard, repeat_rate, repeat_delay);
 
-    /* Here we set up listeners for keyboard events. */
+    /* Set up listeners for keyboard events. */
+
     kb->keyboard_modifiers_listener.notify = keyboard_modifiers_notify;
-    wl_signal_add(&device->keyboard->events.modifiers, &kb->keyboard_modifiers_listener);
-
     kb->keyboard_key_listener.notify = keyboard_key_notify;
-    wl_signal_add(&device->keyboard->events.key, &kb->keyboard_key_listener);
-
     kb->keyboard_destroy_listener.notify = keyboard_destroy_notify;
+
+    wl_signal_add(&device->keyboard->events.modifiers, &kb->keyboard_modifiers_listener);
+    wl_signal_add(&device->keyboard->events.key, &kb->keyboard_key_listener);
     wl_signal_add(&device->events.destroy, &kb->keyboard_destroy_listener);
 
-    wlr_seat_set_keyboard(srv->seat, device);
+    /* Assign the keyboard to the seat. */
 
-    /* And add the keyboard to our list of keyboards */
-    wl_list_insert(&srv->keyboard_list, &kb->keyboard_link);
-    INFO("leave");
+    wlr_seat_set_keyboard(seat, device);
+
+    return env->make_user_ptr(env, NULL, kb);
 }
 
-void backend_new_input_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_set_seat_capabilities(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
 {
-    /* This event is raised by the backend when a new input device becomes
-     * available. */
-    struct wlr_input_device *device = data;
     uint32_t caps;
-    struct ewlc_server *srv = wl_container_of(listener, srv, backend_new_input_listener);
-    INFO("into");
-    DEBUG("  device = '%p'", device);
-    DEBUG("  device->type = '%d'", device->type);
-    switch (device->type) {
-    case WLR_INPUT_DEVICE_KEYBOARD:
-        INFO("  keyboard");
-        create_keyboard(srv, device);
-        break;
-    case WLR_INPUT_DEVICE_POINTER:
-        INFO("  pointer");
-        create_pointer(srv, device);
-        break;
-    default:
-        INFO("  other");
-        /* XXX handle other input device types */
-        break;
-    }
-    /* We need to let the wlr_seat know what our capabilities are, which is
-     * communiciated to the client. We always have a cursor, even if
-     * there are no pointer devices, so we always include that capability. */
-    /* XXX do we actually require a cursor? */
+    struct wlr_seat *seat;
+    emacs_value keyboard_exists;
+
+    seat = env->get_user_ptr(env, args[0]);
+    keyboard_exists = args[1];
+
     caps = WL_SEAT_CAPABILITY_POINTER;
-    if (!wl_list_empty(&srv->keyboard_list))
+    if (keyboard_exists == Qt)
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
     wlr_seat_set_capabilities(srv->seat, caps);
+    return Qt;
+}
 
-    INFO("leave");
+emacs_value Fwlr_get_device_type(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    struct wlr_input_device *device;
+
+    device = env->get_user_ptr(env, args[0]);
+
+    if (device->type == WLR_INPUT_DEVICE_KEYBOARD) {
+        return Qkeyboard;
+    } else if (device->type == WLR_INPUT_DEVICE_POINTER) {
+        return Qpointer;
+    }
+    return Qnil;
 }
 
 void keyboard_key_notify(struct wl_listener *listener, void *data)
@@ -192,23 +192,22 @@ void keyboard_key_notify(struct wl_listener *listener, void *data)
     // free(event);
 }
 
-void keyboard_modifiers_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_seat_set_keyboard(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
 {
-    /* This event is raised when a modifier key, such as shift or alt, is
-     * pressed. We simply communicate this to the client. */
-    struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
-    struct ewlc_server *srv = kb->server;
-    DEBUG("srv = '%p'", srv);
-    /*
-     * A seat can only have one keyboard, but this is a limitation of the
-     * Wayland protocol - not wlroots. We assign all connected keyboards to the
-     * same seat. You can swap out the underlying wlr_keyboard like this and
-     * wlr_seat handles this transparently.
-     */
-    wlr_seat_set_keyboard(srv->seat, kb->device);
-    /* Send modifiers to the client. */
-    wlr_seat_keyboard_notify_modifiers(srv->seat, &kb->device->keyboard->modifiers);
-    INFO("leaving");
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct ewlc_keyboard *kb = env->get_user_ptr(env, args[1]);
+    wlr_seat_set_keyboard(seat, kb->device);
+    return Qt;
+}
+
+emacs_value Fwlr_seat_keyboard_notify_modifiers(emacs_env *env, ptrdiff_t nargs,
+                                                emacs_value args[], void *data)
+{
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct ewlc_keyboard *kb = env->get_user_ptr(env, args[1]);
+    wlr_seat_keyboard_notify_modifiers(seat, &kb->device->keyboard->modifiers);
+    return Qt;
 }
 
 // ----------------------------------------------------------------------

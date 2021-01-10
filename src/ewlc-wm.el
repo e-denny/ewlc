@@ -21,13 +21,15 @@
 
 (module-load "/home/edgar/Projects/ewlc/lib/ewlc.so")
 (load "/home/edgar/Projects/ewlc/src/ewlc-server.el")
+(load "/home/edgar/Projects/ewlc/src/ewlc-log.el")
 
 (require 'cl-lib)
+(require 'ewlc-log)
 (require 'ewlc-server)
 
 (defvar *ewlc-thread* nil "The thread running the wayland event loop.")
 
-(defvar *ewlc* nil "The wayland compositor server.")
+(defvar *log* "~/Projects/ewlc/src/log.txt" "Log file.")
 
 (defvar ewlc-keymap-prefix "C-," "The ewlc keymap prefix.")
 
@@ -129,6 +131,7 @@
 
 (defun exit-wc ()
   "Exit the wayland compositor."
+  (write-log-file)
   (ewlc-cleanup (ewlc-server *ewlc*))
   (setf (ewlc-running-p *ewlc*) nil))
 
