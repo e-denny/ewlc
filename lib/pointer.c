@@ -163,16 +163,29 @@ emacs_value Fwlr_cursor_warp_absolute(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
-emacs_value Fewlc_cursor_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+emacs_value Fwlr_cursor_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
     struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    // TODO: should this be double or int?
     return env->make_integer(env, cursor->x);
 }
 
-emacs_value Fewlc_cursor_y(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+emacs_value Fwlr_cursor_y(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
     struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
     return env->make_integer(env, cursor->y);
+}
+
+// FIXME: need finalizer to free
+emacs_value Fwlr_box_create(emacs_env *env, ptrdiff_t nargs,
+                            emacs_value args[], void *data)
+{
+    struct wlr_box *box = calloc(1, sizeof(*box));
+    box->x = env->extract_integer(env, args[0]);
+    box->y = env->extract_integer(env, args[1]);
+    box->width = env->extract_integer(env, args[2]);
+    box->height = env->extract_integer(env, args[3]);
+    return env->make_user_ptr(env, NULL, box);
 }
 
 emacs_value Fwlr_box_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
@@ -181,10 +194,26 @@ emacs_value Fwlr_box_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void
     return env->make_integer(env, box->x);
 }
 
+emacs_value Fwlr_set_box_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    int val = env->extract_integer(env, args[1]);
+    box->x = val;
+    return Qt;
+}
+
 emacs_value Fwlr_box_y(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
     struct wlr_box *box = env->get_user_ptr(env, args[0]);
     return env->make_integer(env, box->y);
+}
+
+emacs_value Fwlr_set_box_y(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    int val = env->extract_integer(env, args[1]);
+    box->y = val;
+    return Qt;
 }
 
 emacs_value Fwlr_box_width(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
@@ -193,10 +222,28 @@ emacs_value Fwlr_box_width(emacs_env *env, ptrdiff_t nargs, emacs_value args[], 
     return env->make_integer(env, box->width);
 }
 
+emacs_value Fwlr_set_box_width(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    int val = env->extract_integer(env, args[1]);
+    box->width = val;
+    return Qt;
+}
+
 emacs_value Fwlr_box_height(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
     struct wlr_box *box = env->get_user_ptr(env, args[0]);
     return env->make_integer(env, box->height);
+}
+
+emacs_value Fwlr_set_box_height(emacs_env *env, ptrdiff_t nargs,
+                                emacs_value args[], void *data)
+{
+    struct wlr_box *box = env->get_user_ptr(env, args[0]);
+    int val = env->extract_integer(env, args[1]);
+    box->height = val;
+    return Qt;
 }
 
 emacs_value Fewlc_client_type(emacs_env *env, ptrdiff_t nargs, emacs_value args[],
@@ -219,7 +266,7 @@ emacs_value Fwlr_cursor_move(emacs_env *env, ptrdiff_t nargs,
 }
 
 emacs_value Fwlr_cursor_set_surface(emacs_env *env, ptrdiff_t nargs,
-                                     emacs_value args[], void *data)
+                                    emacs_value args[], void *data)
 {
     struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
     struct wlr_seat *seat = env->get_user_ptr(env, args[1]);
@@ -258,6 +305,20 @@ emacs_value Fewlc_cursor_warp_closest(emacs_env *env, ptrdiff_t nargs,
 
     wlr_cursor_warp_closest(cursor, NULL, x, y);
     return Qt;
+}
+
+emacs_value Fwlr_event_pointer_motion_time_msec(emacs_env *env, ptrdiff_t nargs,
+                                                emacs_value args[], void *data)
+{
+    struct wlr_event_pointer_motion *event = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, event->time_msec);
+}
+
+emacs_value Fwlr_event_pointer_motion_absolute_time_msec(emacs_env *env, ptrdiff_t nargs,
+                                                         emacs_value args[], void *data)
+{
+    struct wlr_event_pointer_motion_absolute *event = env->get_user_ptr(env, args[0]);
+    return env->make_integer(env, event->time_msec);
 }
 
 // ----------------------------------------------------------------------

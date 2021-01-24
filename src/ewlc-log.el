@@ -8,7 +8,7 @@
 ;; Modified: August 31, 2020
 ;; Version: 0.0.1
 ;; Keywords:
-;; Homepage: https://github.com/e-denny-ewlc
+;; Homepage: https://github.com/e-denny/ewlc
 ;; Package-Requires: ((emacs 28.0.50) (cl-lib "0.5"))
 ;;
 ;; This file is not part of GNU Emacs.

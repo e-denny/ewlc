@@ -71,14 +71,15 @@ emacs_value Fewlc_output_layout_get_box(emacs_env *env, ptrdiff_t nargs,
 emacs_value Fewlc_output_set_event_listeners(emacs_env *env, ptrdiff_t nargs,
                                              emacs_value args[], void *data)
 {
-    struct ewlc_output *e_output = env->get_user_ptr(env, args[0]);
-    struct wlr_output *w_output = env->get_user_ptr(env, args[1]);
+    struct ewlc_output *o = env->get_user_ptr(env, args[0]);
+    struct wlr_output *wlr_output = env->get_user_ptr(env, args[1]);
 
     /* Set up event listeners */
-    e_output->output_frame_listener.notify = output_frame_notify;
-    wl_signal_add(&w_output->events.frame, &e_output->output_frame_listener);
-    e_output->output_destroy_listener.notify = output_destroy_notify;
-    wl_signal_add(&w_output->events.destroy, &e_output->output_destroy_listener);
+    o->output_frame_listener.notify = output_frame_notify;
+    wl_signal_add(&wlr_output->events.frame, &o->output_frame_listener);
+
+    o->output_destroy_listener.notify = output_destroy_notify;
+    wl_signal_add(&wlr_output->events.destroy, o->output_destroy_listener);
 }
 
 emacs_value Fwlr_output_set_mode(emacs_env *env, ptrdiff_t nargs,

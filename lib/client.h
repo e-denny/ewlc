@@ -59,8 +59,9 @@ struct ewlc_client {
  * frame handler to the per-surface render function. */
 struct render_data {
     struct wlr_output *output;
-    struct ewlc_client *client;
-    struct timespec *when;
+    struct wlr_output_layout *output_layout;
+    struct wlr_renderer *renderer;
+    struct timespec when;
     int x, y; /* layout-relative */
 };
 

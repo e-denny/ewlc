@@ -70,7 +70,6 @@ emacs_value Fewlc_create_keyboard(emacs_env *env, ptrdiff_t nargs,
     struct xkb_context *context;
     struct xkb_keymap *keymap;
     struct ewlc_keyboard *kb;
-    emacs_value
 
     device = env->get_user_ptr(env, args[0]);
     seat = env->get_user_ptr(env, args[1]);
@@ -80,8 +79,6 @@ emacs_value Fewlc_create_keyboard(emacs_env *env, ptrdiff_t nargs,
     kb = device->data = calloc(1, sizeof(*kb));
 
     kb->device = device;
-    kb->server = srv;
-    kb->e_env = srv->e_env;
 
     /* Create an XKB keymap and assign it to the keyboard. */
 

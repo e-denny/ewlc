@@ -141,173 +141,286 @@ void xwayland_ready_handler(struct wl_listener *listener, void *data)
 
 #endif
 
-void ewlc_setup(struct ewlc_server *srv)
+emacs_value Fwl_display_create(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
 {
-    /* The Wayland display is managed by libwayland. It handles accepting
-     * clients from the Unix socket, manging Wayland globals, and so on. */
-    INFO("into");
-    srv->display = wl_display_create();
+    struct wl_display *d = wl_display_create();
+    return env->make_user_ptr(env, NULL, d);
+}
 
-    /* clean up child processes immediately */
-    sigchld(0);
+emacs_value Fc_set_sigchld(emacs_env *env, ptrdiff_t nargs,
+                           emacs_value args[], void *data)
+{
+    int v = env->extract_integer(env, args[0]);
+    sigchld(v);
+    return Qt;
+}
 
-    /* The backend is a wlroots feature which abstracts the underlying input and
-     * output hardware. The autocreate option will choose the most suitable
-     * backend based on the current environment, such as opening an X11 window
-     * if an X11 server is running. The NULL argument here optionally allows you
-     * to pass in a custom renderer if wlr_renderer doesn't meet your needs. The
-     * backend uses the renderer, for example, to fall back to software cursors
-     * if the backend does not support hardware cursors (some older GPUs
-     * don't). */
-    if (!(srv->backend = wlr_backend_autocreate(srv->display, NULL)))
-        ERROR("couldn't create backend");
+emacs_value Fewlc_set_backend_listeners(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_backend *backend = env->get_user_ptr(env, args[1]);
 
-    /* If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
-     * The renderer is responsible for defining the various pixel formats it
-     * supports for shared memory, this configures that for clients. */
-    srv->renderer = wlr_backend_get_renderer(srv->backend);
-    wlr_renderer_init_wl_display(srv->renderer, srv->display);
+    s->backend_new_output_listener.notify = backend_new_output_notify;
+    wl_signal_add(&backend->events.new_output, &s->backend_new_output_listener);
 
-    /* This creates some hands-off wlroots interfaces. The compositor is
-     * necessary for clients to allocate surfaces and the data device manager
-     * handles the clipboard. Each of these wlroots interfaces has room for you
-     * to dig your fingers in and play with their behavior if you want. Note
-     * that the clients cannot set the selection directly without compositor
-     * approval, */
-    srv->compositor = wlr_compositor_create(srv->display, srv->renderer);
-    wlr_export_dmabuf_manager_v1_create(srv->display);
-    wlr_screencopy_manager_v1_create(srv->display);
-    wlr_data_device_manager_create(srv->display);
-    wlr_gamma_control_manager_v1_create(srv->display);
-    wlr_primary_selection_v1_device_manager_create(srv->display);
-    wlr_viewporter_create(srv->display);
+    return Qt;
+}
 
-    /* Creates an output layout, which is a wlroots utility for working with an
-     * arrangement of screens in a physical layout. */
-    srv->output_layout = wlr_output_layout_create();
-    wlr_xdg_output_manager_v1_create(srv->display, srv->output_layout);
+emacs_value Fwlr_backend_autocreate(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_backend *backend = wlr_backend_autocreate(display, NULL);
+    if (backend)
+        return env->make_user_ptr(env, NULL, backend);
+    return Qnil;
+}
 
-    /* Configure a listener to be notified when new outputs are available on the
-     * backend. */
-    wl_list_init(&srv->output_list);
+emacs_value Fwlr_backend_get_renderer(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wlr_backend *backend = env->get_user_ptr(env, args[0]);
+    struct wlr_renderer *renderer = wlr_backend_get_renderer(backend);
+    return env->make_user_ptr(env, NULL, renderer);
+}
 
-    srv->backend_new_output_listener.notify = backend_new_output_notify;
-    wl_signal_add(&srv->backend->events.new_output,
-                  &srv->backend_new_output_listener);
+emacs_value Fwlr_compositor_create(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_renderer *renderer = env->get_user_ptr(env, args[1]);
+    struct wlr_compositor *compositor = wlr_compositor_create(display, renderer);
+    return env->make_user_ptr(env, NULL, compositor);
+}
 
-    /* Set up our client lists and the xdg-shell. The xdg-shell is a
-     * Wayland protocol which is used for application windows. For more
-     * detail on shells, refer to the article:
-     *
-     * https://drewdevault.com/2018/07/29/Wayland-shells.html
-     */
-    wl_list_init(&srv->client_list);
-    wl_list_init(&srv->client_focus_list);
-    wl_list_init(&srv->client_stack_list);
-    wl_list_init(&srv->independent_list);
+emacs_value Fwlr_seat_create(emacs_env *env, ptrdiff_t nargs,
+                             emacs_value args[], void *data)
+{
+    char* name;
+    ptrdiff_t len = 0;
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    env->copy_string_contents(env, args[1], NULL, &len);
+    name = malloc(sizeof(char) * len);
+    env->copy_string_contents(env, args[1], name, &len);
 
-    srv->xdg_shell = wlr_xdg_shell_create(srv->display);
-    srv->xdg_shell_new_surface_listener.notify = xdg_shell_new_surface_notify;
-    wl_signal_add(&srv->xdg_shell->events.new_surface,
-                  &srv->xdg_shell_new_surface_listener);
+    struct wlr_seat *seat = wlr_seat_create(display, name);
+    // TODO: free the seat, put in finalizer ?
+    return env->make_user_ptr(env, NULL, seat);
+}
 
-    /* Use xdg_decoration protocol to negotiate swever side decorations */
-    srv->xdeco_mgr = wlr_xdg_decoration_manager_v1_create(srv->display);
+emacs_value Fwlr_cursor_create(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wlr_cursor *cursor = wlr_cursor_create();
+    return env->make_user_ptr(env, NULL, cursor);
+}
 
-    srv->xdeco_mgr_new_top_level_decoration_listener.notify =
+emacs_value Fwlr_xcursor_manager_create(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
+{
+    /* don't bother with cursor theme - so name not assignable. */
+    char *name = NULL;
+    int size = env->extract_integer(env, args[0]);
+    struct wlr_xcursor_manager *cursor_mgr = wlr_xcursor_manager_create(name, size);
+    return env->make_user_ptr(env, NULL, cursor_mgr);
+}
+
+emacs_value Fwlr_output_layout_create(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wlr_output_layout *output_layout = wlr_output_layout_create();
+    return env->make_user_ptr(env, NULL, output_layout);
+}
+
+emacs_value Fwlr_xdg_shell_create(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_xdg_shell *xdg_shell = wlr_xdg_shell_create(display);
+    return env->make_user_ptr(env, NULL, xdg_shell);
+}
+
+emacs_value Fwlr_xwayland_create(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_compositor *compositor = env->get_user_ptr(env, args[1]);
+    struct wlr_xwayland *xwayland = wlr_xwayland_create(display, compositor, true);
+    return env->make_user_ptr(env, NULL, xwayland);
+}
+
+emacs_value Fwlr_xdg_decoration_manager_v1_create(emacs_env *env, ptrdiff_t nargs,
+                                                  emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_xdg_decoration_manager_v1 *xdg_deco_mgr =
+        wlr_xdg_decoration_manager_v1_create(display);
+    return env->make_user_ptr(env, NULL, xdg_deco_mgr);
+}
+
+emacs_value Fwlr_export_dmabuf_manager_v1_create(emacs_env *env, ptrdiff_t nargs,
+                                                 emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_export_dmabuf_manager_v1 *mgr = wlr_export_dmabuf_manager_v1_create(display);
+    return env->make_user_ptr(env, NULL, mgr);
+}
+
+emacs_value Fwlr_screencopy_v1_create(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_screencopy_manager_v1 *mgr = wlr_screencopy_manager_v1_create(display);
+    return env->make_user_ptr(env, NULL, mgr);
+}
+
+emacs_value Fwlr_data_device_manager_create(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_data_device_manager *mgr = wlr_data_device_manager_create(display);
+    return env->make_user_ptr(env, NULL, mgr);
+}
+
+emacs_value Fwlr_gamma_control_manager_v1_create(emacs_env *env, ptrdiff_t nargs,
+                                                 emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_gamma_control_manager_v1 *mgr = wlr_gamma_control_manager_v1_create(display);
+    return env->make_user_ptr(env, NULL, mgr);
+}
+
+emacs_value Fwlr_primary_selection_v1_device_manager_create(emacs_env *env, ptrdiff_t nargs,
+                                                            emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_primary_selection_v1_device_manager *mgr =
+        wlr_primary_selection_v1_device_manager_create(display);
+    return env->make_user_ptr(env, NULL, mgr);
+}
+
+emacs_value Fwlr_viewporter_create(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_viewporter *viewporter = wlr_viewporter_create(display);
+    return env->make_user_ptr(env, NULL, viewporter);
+}
+
+emacs_value Fwlr_xdg_output_manage_v1_create(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[1]);
+    struct wlr_xdg_output_manager_v1 *mgr =
+        wlr_xdg_output_manager_v1_create(display, output_layout);
+    return env->make_user_ptr(env, NULL, mgr);
+}
+
+emacs_value Fwlr_cursor_attach_output_layout(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value args[], void *data)
+{
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[1]);
+    wlr_cursor_attach_output_layout(cursor, output_layout);
+    return Qt;
+}
+
+emacs_value Fewlc_backend_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_backend *backend = env->get_user_ptr(env, args[1]);
+
+    s->backend_new_output_listener.notify = backend_new_output_notify;
+    s->backend_new_input_listener.notify = backend_new_input_notify;
+
+    wl_signal_add(backend->events.new_output, &s->backend_new_output_listener);
+    wl_signal_add(&backend->events.new_input, &s->backend_new_input_listener);
+}
+
+emacs_value Fewlc_xdg_shell_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                          emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_xdg_shell *xdg_shell = env->get_user_ptr(env, args[1]);
+
+    s->xdg_shell_new_surface_listener.notify = xdg_shell_new_surface_notify;
+    wl_signal_add(&xdg_shell->events.new_surface, &s->xdg_shell_new_surface_listener);
+}
+
+emacs_value Fewlc_xdg_deco_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_xdg_decoration_manager_v1 *xdg_deco = env->get_user_ptr(env, args[1]);
+
+    s->xdeco_mgr_new_top_level_decoration_listener.notify =
         xdeco_mgr_new_toplevel_decoration_notify;
-    wl_signal_add(&srv->xdeco_mgr->events.new_toplevel_decoration,
-                  &srv->xdeco_mgr_new_top_level_decoration_listener);
+    wl_signal_add(&xdg_deco->events.new_toplevel_decoration,
+                  &s->xdeco_mgr_new_top_level_decoration_listener);
+}
 
-    /*
-     * Creates a cursor, which is a wlroots utility for tracking the cursor
-     * image shown on screen.
-     */
-    srv->cursor = wlr_cursor_create();
-    wlr_cursor_attach_output_layout(srv->cursor, srv->output_layout);
+emacs_value Fewlc_cursor_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
 
-    /* Creates an xcursor manager, another wlroots utility which loads up
-     * Xcursor themes to source cursor images from and makes sure that cursor
-     * images are available at all scale factors on the screen (necessary for
-     * HiDPI support). Scaled cursors will be loaded with each output. */
-    srv->cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[1]);
 
-    /*
-     * wlr_cursor *only* displays an image on screen. It does not move around
-     * when the pointer moves. However, we can attach input devices to it, and
-     * it will generate aggregate events for all of them. In these events, we
-     * can choose how we want to process them, forwarding them to clients and
-     * moving the cursor around. More detail on this process is described in my
-     * input handling blog post:
-     *
-     * https://drewdevault.com/2018/07/17/Input-handling-in-wlroots.html
-     *
-     * And more comments are sprinkled throughout the notify functions above.
-     */
+    s->cursor_axis_listener.notify = cursor_axis_notify;
+    s->cursor_button_listener.notify = cursor_button_notify;
+    s->cursor_frame_listener.notify = cursor_frame_notify;
+    s->cursor_motion_listener.notify = cursor_motion_notify;
+    s->cursor_motion_absolute_listener.notify = cursor_motion_absolute_notify;
 
-    srv->cursor_axis_listener.notify = cursor_axis_notify;
-    srv->cursor_button_listener.notify = cursor_button_notify;
-    srv->cursor_frame_listener.notify = cursor_frame_notify;
-    srv->cursor_motion_listener.notify = cursor_motion_notify;
-    srv->cursor_motion_absolute_listener.notify = cursor_motion_absolute_notify;
+    wl_signal_add(&cursor->events.axis, &s->cursor_axis_listener);
+    wl_signal_add(&cursor->events.button, &s->cursor_button_listener);
+    wl_signal_add(&cursor->events.frame, &s->cursor_frame_listener);
+    wl_signal_add(&cursor->events.motion, &s->cursor_motion_listener);
+    wl_signal_add(&cursor->events.motion_absolute, &->cursor_motion_absolute_listener);
+}
 
-    wl_signal_add(&srv->cursor->events.axis, &srv->cursor_axis_listener);
-    wl_signal_add(&srv->cursor->events.button, &srv->cursor_button_listener);
-    wl_signal_add(&srv->cursor->events.frame, &srv->cursor_frame_listener);
-    wl_signal_add(&srv->cursor->events.motion, &srv->cursor_motion_listener);
-    wl_signal_add(&srv->cursor->events.motion_absolute,
-                  &srv->cursor_motion_absolute_listener);
+emacs_value Fewlc_seat_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                     emacs_value args[], void *data)
 
-    /*
-     * Configures a seat, which is a single "seat" at which a user sits and
-     * operates the computer. This conceptually includes up to one keyboard,
-     * pointer, touch, and drawing tablet device. We also rig up a listener to
-     * let us know when new input devices are available on the backend.
-     */
-    wl_list_init(&srv->keyboard_list);
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_seat *seat = env->get_user_ptr(env, args[1]);
 
-    srv->backend_new_input_listener.notify = backend_new_input_notify;
-    wl_signal_add(&srv->backend->events.new_input, &srv->backend_new_input_listener);
-
-    srv->seat = wlr_seat_create(srv->display, "seat0");
-    DEBUG("srv->seat = '%p'", srv->seat);
-
-    srv->seat_request_set_cursor_listener.notify = seat_request_set_cursor_notify;
-    wl_signal_add(&srv->seat->events.request_set_cursor,
-                  &srv->seat_request_set_cursor_listener);
-
-    srv->seat_request_set_selection_listener.notify =
-        seat_request_set_selection_notify;
-    wl_signal_add(&srv->seat->events.request_set_selection,
-                  &srv->seat_request_set_selection_listener);
-
-    srv->seat_request_set_primary_selection_listener.notify =
+    s->seat_request_set_cursor_listener.notify = seat_request_set_cursor_notify;
+    s->seat_request_set_selection_listener.notify = seat_request_set_selection_notify;
+    s->seat_request_set_primary_selection_listener.notify =
         seat_request_set_primary_selection_notify;
-    wl_signal_add(&srv->seat->events.request_set_primary_selection,
-                  &srv->seat_request_set_primary_selection_listener);
 
-#ifdef XWAYLAND
-    /*
-     * Initialise the XWayland X server.
-     * It will be started when the first X client is started.
-     */
-    srv->xwayland =
-        wlr_xwayland_create(srv->display, srv->compositor, true);
-    if (srv->xwayland) {
-        srv->xwayland_ready_listener.notify = xwayland_ready_notify;
-        wl_signal_add(&srv->xwayland->events.ready, &srv->xwayland_ready_listener);
+    wl_signal_add(&seat->events.request_set_cursor, &s->seat_request_set_cursor_listener);
+    wl_signal_add(&seat->events.request_set_selection,
+                  &s->seat_request_set_selection_listener);
+    wl_signal_add(&seat->events.request_set_primary_selection,
+                  &s->seat_request_set_primary_selection_listener);
+}
 
-        srv->new_xwayland_surface_listener.notify = new_xwayland_surface_notify;
-        wl_signal_add(&srv->xwayland->events.new_surface,
-                      &srv->new_xwayland_surface_listener);
+emacs_value Fewlc_xwayland_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
 
-        setenv("DISPLAY", srv->xwayland->display_name, true);
-    } else {
-        fprintf(stderr,
-                "Failed to setup XWayland X server, continuing without it.\n");
-    }
-#endif
-    INFO("leaving");
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wlr_xwayland *xwayland = env->get_user_ptr(env, args[1]);
+
+    s->xwayland_ready_listener.notify = xwayland_ready_notify;
+    s->new_xwayland_surface_listener.notify = new_xwayland_surface_notify;
+
+    wl_signal_add(&xwayland->events.ready, &s->xwayland_ready_listener);
+    wl_signal_add(&xwayland->events.new_surface, &s->new_xwayland_surface_listener);
+}
+
+emacs_value Fewlc_make_server_ptr(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
+{
+    struct ewlc_server *s  = calloc(1, sizeof(*s));
+    return env->make_user_ptr(env, NULL, s);
 }
 
 struct ewlc_server *ewlc_start(emacs_env *env)
@@ -331,11 +444,6 @@ struct ewlc_server *ewlc_start(emacs_env *env)
     srv->startup_pid = -1;
     srv->key_list = NULL;
     srv->event_list = NULL;
-    srv->sloppyfocus = 1;
-    srv->border_px = 1;
-    srv->repeat_rate = 25;
-    srv->repeat_delay = 600;
-    strncpy(srv->broken, "broken", 7);
     srv->root_color[0] = 0.3;
     srv->root_color[1] = 0.3;
     srv->root_color[2] = 0.3;
@@ -392,39 +500,89 @@ struct ewlc_server *ewlc_start(emacs_env *env)
     return srv;
 }
 
-int ewlc_cleanup(struct ewlc_server *srv)
+emacs_value Fc_kill(emacs_env *env, ptrdiff_t nargs,
+                    emacs_value args[], void *data)
 {
-    e_message(srv->e_env, "ewlc_cleanup: enter");
-
-    if (srv->startup_pid != -1) {
-        kill(srv->startup_pid, SIGTERM);
-        waitpid(srv->startup_pid, NULL, 0);
+    int pid = env->extract_integer(env, args[0]);
+    if (pid != -1) {
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
     }
-
-#ifdef XWAYLAND
-    wlr_xwayland_destroy(srv->xwayland);
-#endif
-    wl_display_destroy_clients(srv->display);
-    wl_display_destroy(srv->display);
-
-    wlr_xcursor_manager_destroy(srv->cursor_mgr);
-    wlr_cursor_destroy(srv->cursor);
-
-    wlr_output_layout_destroy(srv->output_layout);
-    free(srv);
-
-    return EXIT_SUCCESS;
+    return Qt;
 }
 
-int ewlc_display_dispatch(struct ewlc_server *srv)
+emacs_value Fwlr_xwayland_destroy(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
 {
-    struct wl_event_loop *loop = wl_display_get_event_loop(srv->display);
-    // INFO("into");
+    struct wlr_xwayland *xwayland = env->get_user_ptr(env, args[0]);
+    wlr_xwayland_destroy(xwayland);
+    return Qt;
+}
 
-    wl_display_flush_clients(srv->display);
-    wl_event_loop_dispatch(loop, -1);
-    // INFO("leaving");
-    return 0;
+emacs_value Fwl_display_destroy_clients(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    wl_display_destroy_clients(display);
+    return Qt;
+}
+
+emacs_value Fwl_display_destroy(emacs_env *env, ptrdiff_t nargs,
+                                emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    wl_display_destroy(display);
+    return Qt;
+}
+
+emacs_value Fwlr_xcursor_manager_destroy(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
+{
+    struct wlr_xcursor_manager *manager = env->get_user_ptr(env, args[0]);
+    wlr_xcursor_manager_destroy(manager);
+    return Qt;
+}
+
+emacs_value Fwlr_cursor_destroy(emacs_env *env, ptrdiff_t nargs,
+                                emacs_value args[], void *data)
+{
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    wlr_cursor_destroy(cursor);
+    return Qt;
+}
+
+emacs_value Fwlr_output_layout_destroy(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
+{
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
+    wlr_output_layout_destroy(output_layout);
+    return Qt;
+}
+
+emacs_value Fwl_display_get_event_loop(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    struct wl_event_loop *loop = wl_display_get_event_loop(display);
+    return env->make_user_ptr(env, NULL, loop);
+}
+
+emacs_value Fwl_display_flush_clients(emacs_env *env, ptrdiff_t nargs,
+                                      emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    wl_display_flush_clients(display);
+    return Qt;
+}
+
+emacs_value Fwl_event_loop_dispatch(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
+{
+    struct wl_event_loop *loop = env->get_user_ptr(env, args[0]);
+    int timeout = env->extract_integer(env, args[1]);
+    if (wl_event_loop_dispatch(loop, timeout) == 0)
+        return Qt;
+    return Qnil;
 }
 
 int handle_events(emacs_env *env, struct ewlc_server *srv)
