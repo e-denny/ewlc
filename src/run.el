@@ -19,8 +19,7 @@
 ;;
 ;;; Code:
 
-(load "/home/edgar/Projects/ewlc/src/ewlc-wm.el")
-;; (require 'ewlc-wm)
+(load "/home/edgar/Projects/ewlc/src/ewlc-server.el")
 
 (start-wc)
 (exit-wc)

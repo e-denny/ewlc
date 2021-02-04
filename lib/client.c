@@ -50,6 +50,22 @@
 #include <wlr/xwayland.h>
 #endif
 
+emacs_value Fwlr_xwayland_surface_close(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
+{
+    struct wlr_xwayland_surface *surface = env->get_user_ptr(env, args[0]);
+    wlr_xwayland_surface_close(surface);
+    return Qt;
+}
+
+emacs_value Fwlr_xdg_toplevel_send_close(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
+{
+    struct wlr_xdg_surface *surface = env->get_user_ptr(env, args[0]);
+    wlr_xdg_toplevel_send_close(surface);
+    return Qt;
+}
+
 emacs_value Fwlr_xdg_surface_surface_at(emacs_env *env, ptrdiff_t nargs,
                                         emacs_value args[], void *data)
 {

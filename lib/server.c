@@ -52,14 +52,30 @@
 #include <wlr/xwayland.h>
 #endif
 
-void xdeco_mgr_new_toplevel_decoration_handler(struct wl_listener *listener, void *data)
+emacs_value Fwl_display_terminate(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
 {
-    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
-    struct ewlc_decoration *d = wlr_deco->data = calloc(1, sizeof(*d));
-    struct ewlc_server *s;
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    wl_display_terminate(display);
+    return Qt;
+}
 
-    s = wl_container_of(listener, s, xdeco_mgr_new_top_level_decoration_listener);
+// TODO: need a finalizer to free pointer.
+emacs_value Fewlc_make_deco_ptr(emacs_env *env, ptrdiff_t nargs,
+                                emacs_value args[], void *data)
+{
+    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[0]);
+    struct ewlc_server *s = env->get_user_ptr(env, args[1]);
+    struct ewlc_decoration *d = wlr_deco->data = calloc(1, sizeof(*d));
     d->server = s;
+    return env->make_user_ptr(env, NULL, d);
+}
+
+emacs_value Fewlc_set_xdg_deco_mgr_toplevel_listeners(emacs_env *env, ptrdiff_t nargs,
+                                                      emacs_value args[], void *data)
+{
+    struct ewlc_decoration *d = env->get_user_ptr(env, args[0]);
+    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[1]);
 
     d->deco_request_mode_listener.notify = deco_request_mode_notify;
     wl_signal_add(&wlr_deco->events.request_mode, &d->deco_request_mode_listener);
@@ -67,7 +83,7 @@ void xdeco_mgr_new_toplevel_decoration_handler(struct wl_listener *listener, voi
     d->deco_destroy_listener.notify = deco_destroy_notify;
     wl_signal_add(&wlr_deco->events.destroy, &d->deco_destroy_listener);
 
-    deco_request_mode_notify(&d->deco_request_mode_listener, wlr_deco);
+    return Qt;
 }
 
 void deco_destroy_handler(struct wl_listener *listener, void *data)
@@ -80,11 +96,13 @@ void deco_destroy_handler(struct wl_listener *listener, void *data)
     free(d);
 }
 
-void deco_request_mode_handler(struct wl_listener *listener, void *data)
+emacs_value Fwlr_xdg_toplevel_decoration_v1_set_mode(emacs_env *env, ptrdiff_t nargs,
+                                                     emacs_value args[], void *data)
 {
-    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
-    wlr_xdg_toplevel_decoration_v1_set_mode(
-        wlr_deco, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[0]);
+    wlr_xdg_toplevel_decoration_v1_set_mode(wlr_deco,
+                                            WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    return Qt;
 }
 
 void sigchld(int unused)
@@ -94,52 +112,82 @@ void sigchld(int unused)
     while (0 < waitpid(-1, NULL, WNOHANG));
 }
 
-#ifdef XWAYLAND
-
-void update_window_type(struct ewlc_client *c)
+emacs_value Fewlc_floating_type_p(emacs_env *env, ptrdiff_t nargs,
+                                  emacs_value args[], void *data)
 {
-    struct ewlc_server *srv = c->server;
-    size_t i;
-    for (i = 0; i < c->surface.xwayland->window_type_len; i++)
-        if (c->surface.xwayland->window_type[i] ==
-                srv->netatom[NetWMWindowTypeDialog] ||
-            c->surface.xwayland->window_type[i] ==
-                srv->netatom[NetWMWindowTypeSplash] ||
-            c->surface.xwayland->window_type[i] ==
-                srv->netatom[NetWMWindowTypeToolbar] ||
-            c->surface.xwayland->window_type[i] ==
-                srv->netatom[NetWMWindowTypeUtility])
-            c->is_floating = 1;
+    struct wlr_xwayland_surface *surface = env->get_user_ptr(env, args[0]);
+    Atom *netatom = env->get_user_ptr(env, args[1]);
+    for (size_t i = 0; i < surface->window_type_len; i++)
+        if (surface->window_type[i] == netatom[NetWMWindowTypeDialog] ||
+            surface->window_type[i] == netatom[NetWMWindowTypeSplash] ||
+            surface->window_type[i] == netatom[NetWMWindowTypeToolbar] ||
+            surface->window_type[i] == netatom[NetWMWindowTypeUtility])
+            return Qt;
+    return Qnil;
 }
 
-void xwayland_ready_handler(struct wl_listener *listener, void *data)
+emacs_value Fewlc_xcb_connect(emacs_env *env, ptrdiff_t nargs,
+                              emacs_value args[], void *data)
 {
-    struct ewlc_server *srv = wl_container_of(listener, srv, xwayland_ready_listener);
-    xcb_connection_t *xc = xcb_connect(srv->xwayland->display_name, NULL);
-    int err = xcb_connection_has_error(xc);
-    if (err) {
-        fprintf(
-            stderr,
-            "xcb_connect to X server failed with code %d\n. Continuing with "
-            "degraded functionality.\n",
-            err);
-        return;
-    }
+    struct wlr_xwayland *xwayland = env->get_user_ptr(env, args[0]);
+    xcb_connection_t *xc = xcb_connect(xwayland->display_name, NULL);
+    return env->make_user_ptr(env, NULL, xc);
+}
 
-    /* Collect atoms we are interested in.  If get_atom returns 0, we will
-     * not detect that window type. */
-    srv->netatom[NetWMWindowTypeDialog] = get_atom(xc, "_NET_WM_WINDOW_TYPE_DIALOG");
-    srv->netatom[NetWMWindowTypeSplash] = get_atom(xc, "_NET_WM_WINDOW_TYPE_SPLASH");
-    srv->netatom[NetWMWindowTypeUtility] = get_atom(xc, "_NET_WM_WINDOW_TYPE_TOOLBAR");
-    srv->netatom[NetWMWindowTypeToolbar] = get_atom(xc, "_NET_WM_WINDOW_TYPE_UTILITY");
+emacs_value Fewlc_xcb_disconnect(emacs_env *env, ptrdiff_t nargs,
+                                 emacs_value args[], void *data)
+{
 
-    /* assign the one and only seat */
-    wlr_xwayland_set_seat(srv->xwayland, srv->seat);
-
+    xcb_connection_t *xc = env->get_user_ptr(env, args[0]);
     xcb_disconnect(xc);
+    return Qt;
 }
 
-#endif
+emacs_value Fewlc_xcb_connect_has_error(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
+{
+    xcb_connection_t *xc = env->get_user_ptr(env, args[0]);
+    int err = xcb_connection_has_error(xc);
+    return env->make_integer(env, err);
+}
+
+Atom get_atom(xcb_connection_t *xc, const char *name)
+{
+    Atom atom = 0;
+    xcb_intern_atom_cookie_t cookie;
+    xcb_intern_atom_reply_t *reply;
+
+    cookie = xcb_intern_atom(xc, 0, strlen(name), name);
+    if ((reply = xcb_intern_atom_reply(xc, cookie, NULL)))
+        atom = reply->atom;
+    free(reply);
+
+    return atom;
+}
+
+emacs_value Fewlc_set_atoms(emacs_env *env, ptrdiff_t nargs,
+                            emacs_value args[], void *data)
+{
+    xcb_connection_t *xc = env->get_user_ptr(env, args[0]);
+    Atom *netatom = calloc(4, sizeof(Atom));
+
+    // FIXME: where is the function get_atom()
+    netatom[NetWMWindowTypeDialog] = get_atom(xc, "_NET_WM_WINDOW_TYPE_DIALOG");
+    netatom[NetWMWindowTypeSplash] = get_atom(xc, "_NET_WM_WINDOW_TYPE_SPLASH");
+    netatom[NetWMWindowTypeUtility] = get_atom(xc, "_NET_WM_WINDOW_TYPE_TOOLBAR");
+    netatom[NetWMWindowTypeToolbar] = get_atom(xc, "_NET_WM_WINDOW_TYPE_UTILITY");
+
+    return env->make_user_ptr(env, NULL, netatom);
+}
+
+emacs_value Fwlr_xwayland_set_seat(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct wlr_xwayland *xwayland = env->get_user_ptr(env, args[0]);
+    struct wlr_seat *seat = env->get_user_ptr(env, args[1]);
+    wlr_xwayland_set_seat(xwayland, seat);
+    return Qt;
+}
 
 emacs_value Fwl_display_create(emacs_env *env, ptrdiff_t nargs,
                                emacs_value args[], void *data)
@@ -423,81 +471,29 @@ emacs_value Fewlc_make_server_ptr(emacs_env *env, ptrdiff_t nargs,
     return env->make_user_ptr(env, NULL, s);
 }
 
-struct ewlc_server *ewlc_start(emacs_env *env)
+emacs_value Fwl_display_add_socket_auto(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
 {
-    const char *socket;
-    char startup_cmd[] = "alacritty";
-    struct ewlc_server *srv = calloc(1, sizeof(*srv));
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    char *socket = wl_display_add_socket_auto(srv->display);
+    return env->make_string(env, socket, strlen(socket));
+}
 
-    INFO("into");
-    srv->e_env = env;
+emacs_value Fwlr_backend_start(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wlr_backend *backend = env->get_user_ptr(env, args[0]);
+    if (wlr_backend_start(backend))
+        return Qt;
+    return Qnil;
+}
 
-    e_message(srv->e_env, "ewlc_start: into");
-
-    // Wayland requires XDG_RUNTIME_DIR for creating its communications
-    // socket
-    if (!getenv("XDG_RUNTIME_DIR"))
-        ERROR("XDG_RUNTIME_DIR must be set");
-
-    ewlc_setup(srv);
-
-    srv->startup_pid = -1;
-    srv->key_list = NULL;
-    srv->event_list = NULL;
-    srv->root_color[0] = 0.3;
-    srv->root_color[1] = 0.3;
-    srv->root_color[2] = 0.3;
-    srv->root_color[3] = 1.0;
-    srv->border_color[0] = 0.5;
-    srv->border_color[1] = 0.5;
-    srv->border_color[2] = 0.5;
-    srv->border_color[3] = 1.0;
-    srv->focus_color[0] = 1.0;
-    srv->focus_color[1] = 0.0;
-    srv->focus_color[2] = 0.0;
-    srv->focus_color[3] = 1.0;
-
-    /* Add a Unix socket to the Wayland display. */
-    // const char *socket = wl_display_add_socket_auto(server.display);
-    socket = wl_display_add_socket_auto(srv->display);
-
-    if (!socket)
-        ERROR("startup: display_add_socket_auto");
-
-    /* Start the backend. This will enumerate outputs and inputs, become the DRM
-     * master, etc */
-    if (!wlr_backend_start(srv->backend))
-        ERROR("startup: backend_start");
-
-    // loop over backend events to make sure all input and outputs are created.
-    handle_events(env, srv);
-
-    /* Now that outputs are initialized, choose initial active_output based on
-     * cursor position, and set default cursor image */
-    srv->active_output = get_output_at_point(srv, srv->cursor->x, srv->cursor->y);
-
-    /* XXX hack to get cursor to display in its initial location (100, 100)
-     * instead of (0, 0) and then jumping.  still may not be fully
-     * initialized, as the image/coordinates are not transformed for the
-     * output when displayed here */
-    wlr_cursor_warp_closest(srv->cursor, NULL, srv->cursor->x, srv->cursor->y);
-    wlr_xcursor_manager_set_cursor_image(srv->cursor_mgr, "left_ptr", srv->cursor);
-
-    /* Set the WAYLAND_DISPLAY environment variable to our socket and run the
-     * startup command if requested. */
-    setenv("WAYLAND_DISPLAY", socket, 1);
-    srv->startup_pid = fork();
-    if (srv->startup_pid < 0)
-        EERROR("startup: fork");
-    if (srv->startup_pid == 0) {
-        execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
-        EERROR("startup: execl");
-    }
-
-    e_message(srv->e_env, "ewlc_start: leaving");
-
-    INFO("leaving");
-    return srv;
+emacs_value Fwlr_xwayland_display_name(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
+{
+    struct wlr_xwayland *xwayland = env->get_user_ptr(env, args[0]);
+    const char *name = xwayland->display_name;
+    return env->make_string(env, name, strlen(name));
 }
 
 emacs_value Fc_kill(emacs_env *env, ptrdiff_t nargs,
@@ -585,199 +581,36 @@ emacs_value Fwl_event_loop_dispatch(emacs_env *env, ptrdiff_t nargs,
     return Qnil;
 }
 
-int handle_events(emacs_env *env, struct ewlc_server *srv)
+emacs_value Fewlc_pending_events_p(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
 {
-    struct wl_listener *listener;
-    struct wlr_input_device *device;
-    struct ewlc_keyboard *kb;
-    void *data;
-    int type;
-    int handled;
-    emacs_value e_listener, e_data, e_kb, e_device;
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    if (s->event_list != NULL)
+        return Qt;
+    return Qnil;
+}
 
-    while (srv->event_list != NULL) {
-        handled = 0;
-        listener = srv->event_list->listener;
-        data = srv->event_list->data;
-        type = srv->event_list->type;
+emacs_value Fewlc_pending_events_p(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct wl_listener *listener = s->event_list->listener;
+    void *data = s->event_list->data;
+    char *type = s->event_list->type;
+    emacs_value ret[2];
+    ret[0] = env->make_user_ptr(env, NULL, data);
+    ret[1] = env->intern(env, type);
+    return list(env, ret, 2);
+}
 
-        switch (type) {
-        case EWLC_CURSOR_AXIS:
-            INFO("EWLC_CURSOR_AXIS");
+emacs_value Fewlc_remove_event(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
 
-            e_data = env->make_user_ptr(env, NULL, data);
-
-            env->funcall(env, env->intern(env, "ewlc-pointer-axis-handler"),
-                         1, (emacs_value[]){e_data});
-
-            // cursor_axis_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_CURSOR_BUTTON:
-            INFO("EWLC_CURSOR_BUTTON");
-
-            e_data = env->make_user_ptr(env, NULL, data);
-
-            env->funcall(env, env->intern(env, "ewlc-pointer-button-handler"),
-                         1, (emacs_value[]){e_data});
-
-            // cursor_button_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_CURSOR_MOTION:
-            INFO("EWLC_CURSOR_MOTION");
-            cursor_motion_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_CURSOR_FRAME:
-            INFO("EWLC_CURSOR_FRAME");
-            cursor_frame_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_CURSOR_MOTION_ABSOLUTE:
-            INFO("EWLC_CURSOR_MOTION_ABSOLUTE");
-            cursor_motion_absolute_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_SEAT_REQUEST_SET_CURSOR:
-            INFO("EWLC_SEAT_REQUEST_SET_CURSOR");
-            seat_request_set_cursor_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION:
-            INFO("EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION");
-            seat_request_set_primary_selection_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_SEAT_REQUEST_SET_SELECTION:
-            INFO("EWLC_SEAT_REQUEST_SET_SELECTION");
-            seat_request_set_selection_handler(listener, data);
-            handled = 1;
-            break;
-
-        case EWLC_KEYBOARD_DESTROY:
-            INFO("EWLC_KEYBOARD_DESTROY");
-
-            kb = wl_container_of(listener, kb, keyboard_destroy_listener);
-            e_kb = env->make_user_ptr(env, NULL, kb);
-
-            env->funcall(env, env->intern(env, "ewlc-keyboard-destroy-handler"),
-                         1, (emacs_value[]){e_kb});
-
-            // keyboard_destroy_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_BACKEND_NEW_INPUT:
-            INFO("EWLC_BACKEND_NEW_INPUT");
-
-            device = data;
-            e_device = env->make_user_ptr(env, NULL, device);
-
-            env->funcall(env, env->intern(env, "ewlc-new-input-handler"),
-                         1, (emacs_value[]){e_device});
-
-            // backend_new_input_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_KEYBOARD_KEY:
-            INFO("EWLC_KEYBOARD_KEY");
-            keyboard_key_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_KEYBOARD_MODIFIERS:
-            INFO("EWLC_KEYBOARD_MODIFIERS");
-
-            kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
-            e_kb = env->make_user_ptr(env, NULL, kb);
-
-            env->funcall(env, env->intern(env, "ewlc-keyboard-modifiers-handler"),
-                         1, (emacs_value[]){e_kb});
-
-            // keyboard_modifiers_handler(listener, data);
-            handled = 1;
-            break;
-
-
-        case EWLC_XWAYLAND_READY:
-            xwayland_ready_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_DECO_REQUEST_MODE:
-            deco_request_mode_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_DECO_DESTROY:
-            deco_destroy_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_NEW_TOPLEVEL_DECORATION:
-            xdeco_mgr_new_toplevel_decoration_handler(listener, data);
-            handled = 1;
-            break;
-
-
-        case EWLC_OUTPUT_DESTROY:
-            INFO("EWLC_OUTPUT_DESTROY");
-            output_destroy_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_OUTPUT_FRAME:
-            // INFO("EWLC_OUTPUT_FRAME");
-            output_frame_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_BACKEND_NEW_OUTPUT:
-            INFO("EWLC_BACKEND_NEW_OUTPUT");
-            backend_new_output_handler(listener, data);
-            handled = 1;
-            break;
-
-
-        case EWLC_XDG_SURFACE_COMMIT:
-            INFO("EWLC_XDG_SURFACE_COMMIT");
-            xdg_surface_commit_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_XDG_SHELL_NEW_SURFACE:
-            INFO("EWLC_XDG_SHELL_NEW_SURFACE");
-            xdg_shell_new_surface_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_SURFACE_DESTROY:
-            INFO("EWLC_SURFACE_DESTROY");
-            surface_destroy_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_SURFACE_MAP:
-            INFO("EWLC_SURFACE_MAP");
-            surface_map_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_SURFACE_UNMAP:
-            INFO("EWLC_SURFACE_UNMAP");
-            surface_unmap_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_X_SURFACE_REQUEST_ACTIVATE:
-            INFO("EWLC_X_SURFACE_REQUEST_ACTIVATE");
-            xwayland_surface_request_activate_handler(listener, data);
-            handled = 1;
-            break;
-        case EWLC_NEW_X_SURFACE:
-            INFO("EWLC_NEW_X_SURFACE");
-            new_xwayland_surface_handler(listener, data);
-            handled = 1;
-            break;
-        }
-
-        if (handled == 0) {
-            DEBUG("Error: event not handled! type: %d", handled);
-            return handled;
-        }
-
-        srv->event_list = remove_event(srv->event_list);
-    }
-    return handled;
+    // FIXME: free the event here rather in lisp code
+    srv->event_list = remove_event(srv->event_list);
+    return Qt;
 }
 
 // ----------------------------------------------------------------------
@@ -787,7 +620,7 @@ void xwayland_ready_notify(struct wl_listener *listener, void *data)
     struct ewlc_server *s = wl_container_of(listener, s, xwayland_ready_listener);
     struct event_node *e_node;
 
-    e_node = create_event(listener, data, EWLC_XWAYLAND_READY);
+    e_node = create_event(listener, data, "ewlc-xwayland-ready");
     s->event_list = add_event(s->event_list, e_node);
 }
 
@@ -799,7 +632,7 @@ void deco_request_mode_notify(struct wl_listener *listener, void *data)
 
     d = wl_container_of(listener, d, deco_request_mode_listener);
     s = d->server;
-    e_node = create_event(listener, data, EWLC_DECO_REQUEST_MODE);
+    e_node = create_event(listener, data, "ewlc-deco-request-mode");
     s->event_list = add_event(s->event_list, e_node);
 }
 
@@ -811,7 +644,7 @@ void deco_destroy_notify(struct wl_listener *listener, void *data)
 
     d = wl_container_of(listener, d, deco_destroy_listener);
     s = d->server;
-    e_node = create_event(listener, data, EWLC_DECO_DESTROY);
+    e_node = create_event(listener, data, "ewlc_deco_destroy");
     s->event_list = add_event(s->event_list, e_node);
 }
 
@@ -821,6 +654,6 @@ void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void
     struct event_node *e_node;
 
     s = wl_container_of(listener, s, xdeco_mgr_new_top_level_decoration_listener);
-    e_node = create_event(listener, data, EWLC_NEW_TOPLEVEL_DECORATION);
+    e_node = create_event(listener, data, "ewlc_new_toplevel_decoration");
     s->event_list = add_event(s->event_list, e_node);
 }

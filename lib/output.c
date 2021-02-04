@@ -79,7 +79,7 @@ emacs_value Fewlc_output_set_event_listeners(emacs_env *env, ptrdiff_t nargs,
     wl_signal_add(&wlr_output->events.frame, &o->output_frame_listener);
 
     o->output_destroy_listener.notify = output_destroy_notify;
-    wl_signal_add(&wlr_output->events.destroy, o->output_destroy_listener);
+    wl_signal_add(&wlr_output->events.destroy, &o->output_destroy_listener);
 }
 
 emacs_value Fwlr_output_set_mode(emacs_env *env, ptrdiff_t nargs,
@@ -105,7 +105,7 @@ emacs_value Fewlc_make_output_ptr(emacs_env *env, ptrdiff_t nargs,
     struct ewlc_output *o;
     struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
     o = wlr_output->data = calloc(1, sizeof(*o));
-    o->wlr_output = wlr_output;
+    // o->wlr_output = wlr_output;
     return env->make_user_ptr(env, NULL, o);
 }
 
@@ -248,7 +248,7 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
     struct event_node *e;
 
     s = wl_container_of(listener, s, backend_new_output_listener);
-    e = create_event(listener, data, EWLC_BACKEND_NEW_OUTPUT);
+    e = create_event(listener, data, "ewlc-backend-new-output");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -260,7 +260,7 @@ void output_destroy_notify(struct wl_listener *listener, void *data)
 
     o = wl_container_of(listener, o, output_destroy_listener);
     s = o->server;
-    e = create_event(listener, data, EWLC_OUTPUT_DESTROY);
+    e = create_event(listener, data, "ewlc-output-destroy");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -275,6 +275,6 @@ void output_frame_notify(struct wl_listener *listener, void *data)
 
     o = wl_container_of(listener, o, output_frame_listener);
     s = o->server;
-    e = create_event(listener, data, EWLC_OUTPUT_FRAME);
+    e = create_event(listener, data, "ewlc-output-frame");
     s->event_list = add_event(s->event_list, e);
 }

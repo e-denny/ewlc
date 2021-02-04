@@ -17,14 +17,8 @@
 #include <xkbcommon/xkbcommon.h>
 #include <wlr/types/wlr_surface.h>
 
-#ifdef XWAYLAND
 #include <X11/Xlib.h>
 #include <wlr/xwayland.h>
-#endif
-
-#ifdef XWAYLAND
-enum { XDG_SHELL, X11_MANAGED, X11_UNMANAGED }; /* client types */
-#endif
 
 struct ewlc_output;
 struct ewlc_server;
@@ -32,27 +26,11 @@ struct ewlc_server;
 struct ewlc_client {
     struct ewlc_server *server;
     struct ewlc_output *output;
-    struct wl_list client_link;
-    struct wl_list client_focus_link;
-    struct wl_list client_stack_link;
-    union {
-        struct wlr_xdg_surface *xdg;
-#ifdef XWAYLAND
-        struct wlr_xwayland_surface *xwayland;
-#endif
-    } surface;
-#ifdef XWAYLAND
     struct wl_listener xwayland_surface_request_activate_listener;
-    unsigned int type;
-#endif
     struct wl_listener surface_commit_listener;
     struct wl_listener surface_map_listener;
     struct wl_listener surface_unmap_listener;
     struct wl_listener surface_destroy_listener;
-    struct wlr_box geom; /* layout-relative, includes border */
-    int border_width;
-    int is_floating;
-    uint32_t resize; /* configure serial of a pending resize */
 };
 
 /* Used to move all of the data necessary to render a surface from the top-level
@@ -91,7 +69,6 @@ struct ewlc_client *get_client_at_point(struct ewlc_server *s, double x, double 
 void apply_title(struct ewlc_client *c, struct ewlc_output *active_output);
 void scale_box(struct wlr_box *box, float scale);
 
-#ifdef XWAYLAND
 void xwayland_surface_request_activate_notify(struct wl_listener *listener, void *data);
 void xwayland_surface_request_activate_handler(struct wl_listener *listener, void *data);
 void new_xwayland_surface_notify(struct wl_listener *listener, void *data);
@@ -100,6 +77,5 @@ void render_independents(struct ewlc_server *s, struct wlr_output *output,
                          struct timespec *now);
 struct ewlc_client *get_independent_at_point(struct ewlc_server *s,double x, double y);
 Atom get_atom(xcb_connection_t *xc, const char *name);
-#endif
 
 #endif // __CLIENT_H_

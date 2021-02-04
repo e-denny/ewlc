@@ -50,48 +50,56 @@
 #include <wlr/xwayland.h>
 #endif
 
-const struct xkb_rule_names xkb_rules = {0};
 
 emacs_value Fewlc_free(emacs_env *env, ptrdiff_t nargs,
                        emacs_value args[], void *data)
 {
-    free(env->get_user_ptr(env, args[0]));;
+    free(env->get_user_ptr(env, args[0]));
     return Qt;
 }
 
-emacs_value Fewlc_create_keyboard(emacs_env *env, ptrdiff_t nargs,
-                                  emacs_value args[], void *data)
+emacs_value Fewlc_make_keyboard_pointer(emacs_env *env, ptrdiff_t nargs,
+                                        emacs_value args[], void *data)
 {
-    struct wlr_input_device *device;
-    struct wlr_seat *seat;
-    int repeat_rate;
-    int repeat_delay;
-
-    struct xkb_context *context;
-    struct xkb_keymap *keymap;
     struct ewlc_keyboard *kb;
-
-    device = env->get_user_ptr(env, args[0]);
-    seat = env->get_user_ptr(env, args[1]);
-    repeat_rate = env->extract_integer(env, args[2]);
-    repeat_delay = env->extract_integer(env, args[3]);
-
+    struct wlr_input_device *device = env->get_user_ptr(env, args[0]);
     kb = device->data = calloc(1, sizeof(*kb));
+    // kb->device = device;
+    return env->make_user_ptr(env, NULL, kb);
+}
 
-    kb->device = device;
-
-    /* Create an XKB keymap and assign it to the keyboard. */
-
-    context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    keymap = xkb_map_new_from_names(context, &xkb_rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
+emacs_value Fwlr_keyboard_set_keymap(emacs_env *env, ptrdiff_t nargs,
+                                     emacs_value args[], void *data)
+{
+    struct wlr_input_device *device = env->get_user_ptr(env, args[0]);
+    struct xkb_rule_names xkb_rules = {0};
+    struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    struct xkb_keymap * keymap = xkb_map_new_from_names(context,
+                                                        &xkb_rules,
+                                                        XKB_KEYMAP_COMPILE_NO_FLAGS);
     wlr_keyboard_set_keymap(device->keyboard, keymap);
     xkb_keymap_unref(keymap);
     xkb_context_unref(context);
+    return Qt;
+}
 
+emacs_value Fwlr_keyboard_set_repeat_info(emacs_env *env, ptrdiff_t nargs,
+                                          emacs_value args[], void *data)
+{
+    struct wlr_input_device *device = env->get_user_ptr(env, args[0]);
+    int repeat_rate = env->extract_integer(env, args[1]);
+    int repeat_delay = env->extract_integer(env, args[2]);
     wlr_keyboard_set_repeat_info(device->keyboard, repeat_rate, repeat_delay);
+    return Qt;
+}
 
-    /* Set up listeners for keyboard events. */
+emacs_value Fewlc_keyboard_set_event_listeners(emacs_env *env, ptrdiff_t nargs,
+                                               emacs_value args[], void *data)
+{
+    struct ewlc_keyboard *kb = env->get_user_ptr(env, args[0]);
+    struct wlr_input_device *device = env->get_user_ptr(env, args[1]);
 
+    /* Set up event listeners */
     kb->keyboard_modifiers_listener.notify = keyboard_modifiers_notify;
     kb->keyboard_key_listener.notify = keyboard_key_notify;
     kb->keyboard_destroy_listener.notify = keyboard_destroy_notify;
@@ -100,11 +108,17 @@ emacs_value Fewlc_create_keyboard(emacs_env *env, ptrdiff_t nargs,
     wl_signal_add(&device->keyboard->events.key, &kb->keyboard_key_listener);
     wl_signal_add(&device->events.destroy, &kb->keyboard_destroy_listener);
 
-    /* Assign the keyboard to the seat. */
+    return Qt;
+}
 
+
+emacs_value Fwlr_seat_set_keyboard(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_input_device *device = env->get_user_ptr(env, args[1]);
     wlr_seat_set_keyboard(seat, device);
-
-    return env->make_user_ptr(env, NULL, kb);
+    return Qt;
 }
 
 emacs_value Fwlr_set_seat_capabilities(emacs_env *env, ptrdiff_t nargs,
@@ -187,15 +201,6 @@ void keyboard_key_notify(struct wl_listener *listener, void *data)
                                  event->keycode, event->state);
     INFO("<<<");
     // free(event);
-}
-
-emacs_value Fwlr_seat_set_keyboard(emacs_env *env, ptrdiff_t nargs,
-                                   emacs_value args[], void *data)
-{
-    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
-    struct ewlc_keyboard *kb = env->get_user_ptr(env, args[1]);
-    wlr_seat_set_keyboard(seat, kb->device);
-    return Qt;
 }
 
 emacs_value Fwlr_seat_keyboard_notify_modifiers(emacs_env *env, ptrdiff_t nargs,

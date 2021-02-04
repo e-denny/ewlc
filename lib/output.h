@@ -14,15 +14,9 @@ struct ewlc_server;
 
 /*  structs  */
 struct ewlc_output {
-    struct wlr_output *wlr_output;
     struct ewlc_server *server;
-    struct wl_list output_link;
     struct wl_listener output_frame_listener;
     struct wl_listener output_destroy_listener;
-    struct wlr_box m; /* output area */
-    struct wlr_box w; /* window area */
-    double master_ratio;
-    int num_master;
 };
 
 struct ewlc_output_rule {

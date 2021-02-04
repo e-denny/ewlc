@@ -57,6 +57,8 @@ typedef struct {
 } Button;
 
 struct ewlc_server {
+    struct key_node *key_list;
+    struct event_node *event_list;
 
     struct wl_listener xdg_shell_new_surface_listener;
 
@@ -73,19 +75,17 @@ struct ewlc_server {
     struct wl_listener backend_new_input_listener;
     struct wl_listener backend_new_output_listener;
 
-    struct key_node *key_list;
-    struct event_node *event_list;
 
     struct wl_listener xdeco_mgr_new_top_level_decoration_listener;
 
     struct wl_listener new_xwayland_surface_listener;
     struct wl_listener xwayland_ready_listener;
-    Atom netatom[NetLast];
 
     Button buttons[3];
 };
 
 struct ewlc_decoration {
+    struct ewlc_server *server;
     struct wl_listener deco_request_mode_listener;
     struct wl_listener deco_destroy_listener;
 };
