@@ -618,13 +618,11 @@ the output's refresh rate."
              (when (and (ewlc-sloppy-focus *ewlc*) (equal (ewlc-client-type client) 'x11-unmanaged))
                (ewlc-focus-client (ewlc-get-active-client) client nil)))))))
 
-(defun ewlc-get-client-at-point (cursor)
+(cl-defun ewlc-get-client-at-point (cursor)
   "Get the client at the CURSOR point."
   (cl-dolist (client (ewlc-client-stack-list *ewlc*))
     (when (and (ewlc-client-visible-on-output-p client (ewlc-client-output client))
-               (wlr-box-contains-point (ewlc-client-geom client)
-                                       (wlr-cursor-x cursor)
-                                       (wlr-cursor-y cursor)))
+               (wlr-box-contains-point (ewlc-client-geom client) cursor))
       (cl-return client))))
 
 (defun ewlc-get-wlr-surface (client)

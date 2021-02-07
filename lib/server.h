@@ -1,7 +1,3 @@
-/*
- p See LICENSE file for copyright and license details.
- */
-
 #ifndef __SERVER_H_
 #define __SERVER_H_
 
@@ -37,6 +33,42 @@ enum {
     NetWMWindowTypeToolbar,
     NetWMWindowTypeUtility,
     NetLast
+};
+
+struct ewlc_server;
+
+struct ewlc_output {
+    struct ewlc_server *server;
+    struct wl_listener output_frame_listener;
+    struct wl_listener output_destroy_listener;
+};
+
+struct ewlc_client {
+    struct ewlc_server *server;
+    struct ewlc_output *output;
+    struct wl_listener xwayland_surface_request_activate_listener;
+    struct wl_listener surface_commit_listener;
+    struct wl_listener surface_map_listener;
+    struct wl_listener surface_unmap_listener;
+    struct wl_listener surface_destroy_listener;
+};
+
+/* Used to move all of the data necessary to render a surface from the top-level
+ * frame handler to the per-surface render function. */
+struct render_data {
+    struct wlr_output *output;
+    struct wlr_output_layout *output_layout;
+    struct wlr_renderer *renderer;
+    struct timespec when;
+    int x, y; /* layout-relative */
+};
+
+struct ewlc_output_rule {
+    const char *name;
+    float master_ratio;
+    int num_master;
+    float scale;
+    enum wl_output_transform rr;
 };
 
 struct ewlc_output;
@@ -90,16 +122,15 @@ struct ewlc_decoration {
     struct wl_listener deco_destroy_listener;
 };
 
+struct ewlc_keyboard {
+    // does this need to be here ?
+    struct wlr_input_device *device;
+    struct ewlc_server *server;
 
-/* function declarations */
-void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void *data);
-void deco_destroy_notify(struct wl_listener *listener, void *data);
-void deco_request_mode_notify(struct wl_listener *listener, void *data);
-
-int handle_events(emacs_env *env, struct ewlc_server *srv);
-
-void xwayland_ready_notify(struct wl_listener *listener, void *data);
-void update_window_type(struct ewlc_client *c);
+    struct wl_listener keyboard_modifiers_listener;
+    struct wl_listener keyboard_key_listener;
+    struct wl_listener keyboard_destroy_listener;
+};
 
 // TODO: make a variable
 #define MODKEY WLR_MODIFIER_ALT

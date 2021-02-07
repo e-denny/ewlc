@@ -4,6 +4,7 @@
 #include "module.h"
 #include "client.h"
 #include "util.h"
+#include "Fwlr.h"
 #include <emacs-module.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
@@ -22,160 +23,6 @@ emacs_value Fewlc_apply_keybinding;
 
 /* Declare mandatory GPL symbol.  */
 int plugin_is_GPL_compatible;
-
-int string_bytes(emacs_env *env, emacs_value string) {
-  ptrdiff_t size = 0;
-  env->copy_string_contents(env, string, NULL, &size);
-  return size;
-}
-
-static emacs_value Fewlc_compare_clients(emacs_env *env, ptrdiff_t nargs,
-                                         emacs_value args[], void *data)
-{
-    struct ewlc_client *c_a = env->get_user_ptr(env, args[0]);
-    struct ewlc_client *c_b = env->get_user_ptr(env, args[1]);
-    if (c_a == c_b)
-        return Qt;
-    return Qnil;
-}
-
-static emacs_value Fewlc_start(emacs_env *env, ptrdiff_t nargs,
-                               emacs_value args[], void *data)
-{
-    struct ewlc_server *srv;
-
-    srv = ewlc_start(env);
-    return env->make_user_ptr(env, NULL, srv);
-}
-
-static emacs_value Fewlc_display_dispatch(emacs_env *env, ptrdiff_t nargs,
-                                          emacs_value args[], void *data)
-{
-    int r;
-    struct ewlc_server *srv = env->get_user_ptr(env, args[0]);
-    r = ewlc_display_dispatch(srv);
-    return env->make_integer(env, r);
-}
-
-static emacs_value Fewlc_cleanup(emacs_env *env, ptrdiff_t nargs,
-                                 emacs_value args[], void *data)
-{
-    struct ewlc_server *srv = env->get_user_ptr(env, args[0]);
-    int r = ewlc_cleanup(srv);
-    return env->make_integer(env, r);
-}
-
-static emacs_value Fewlc_focus_next_client(emacs_env *env, ptrdiff_t nargs,
-                                           emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    int direction = env->extract_integer(env, args[1]);
-    ewlc_focus_next_client(direction, server);
-    return Qt;
-}
-
-static emacs_value Fewlc_set_master_ratio(emacs_env *env, ptrdiff_t nargs,
-                                          emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    float inc = env->extract_float(env, args[1]);
-
-    ewlc_set_master_ratio(inc, server);
-    return Qt;
-}
-
-static emacs_value Fewlc_focus_output(emacs_env *env, ptrdiff_t nargs,
-                                      emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    int direction = env->extract_integer(env, args[1]);
-
-    ewlc_focus_output(direction, server);
-    return Qt;
-}
-
-static emacs_value Fewlc_chvt(emacs_env *env, ptrdiff_t nargs,
-                              emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    int nbr = env->extract_integer(env, args[1]);
-
-    ewlc_chvt(server, nbr);
-    return Qt;
-}
-
-static emacs_value Fewlc_zoom(emacs_env *env, ptrdiff_t nargs,
-                              emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-
-    ewlc_zoom(server);
-    return Qt;
-}
-
-static emacs_value Fewlc_add_master(emacs_env *env, ptrdiff_t nargs,
-                                    emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    int delta = env->extract_integer(env, args[1]);
-
-    ewlc_add_master(server, delta);
-    return Qt;
-}
-
-static emacs_value Fewlc_spawn(emacs_env *env, ptrdiff_t nargs,
-                               emacs_value args[], void *data)
-{
-    ptrdiff_t len;
-    char *cmd, **cmd_args;
-
-    len = string_bytes(env, args[0]);
-    cmd = malloc(sizeof(char) * len);
-    env->copy_string_contents(env, args[0], cmd, &len);
-    if (nargs > 1) {
-        len = string_bytes(env, args[1]);
-        cmd_args = malloc(sizeof(char*));
-        cmd_args[1] = malloc(sizeof(char) * len);
-        env->copy_string_contents(env, args[1], cmd_args[0], &len);
-    }
-    ewlc_spawn(cmd, cmd_args);
-    free(cmd);
-    // FIXME: this is a mess, is wrong, and leaks.
-    if (nargs > 1) free(cmd_args);
-    return Qt;
-}
-
-static emacs_value Fewlc_kill_client(emacs_env *env, ptrdiff_t nargs,
-                                     emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    ewlc_kill_client(server);
-    return Qt;
-}
-
-static emacs_value Fewlc_toggle_floating(emacs_env *env, ptrdiff_t nargs,
-                                         emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    ewlc_toggle_floating(server);
-    return Qt;
-}
-
-static emacs_value Fewlc_view(emacs_env *env, ptrdiff_t nargs,
-                              emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    ewlc_view(server);
-    return Qt;
-}
-
-static emacs_value Fewlc_quit(emacs_env *env, ptrdiff_t nargs,
-                              emacs_value args[], void *data)
-{
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
-    ewlc_quit(server);
-    return Qt;
-}
 
 emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
                                      emacs_value args[], void *data)
@@ -229,19 +76,12 @@ emacs_value Fewlc_handle_keybindings(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
-emacs_value Fewlc_handle_events(emacs_env *env, ptrdiff_t nargs,
-                                emacs_value args[], void *e_data)
-{
-    /* Get the next pending event and pass it to it's handler.
-     * This called within the emacs ewlc event loop. */
-    struct ewlc_server *srv;
-    int handled;
+//------------------------------------
 
-    srv = env->get_user_ptr(env, args[0]);
-    handled = handle_events(env, srv);
-    if (handled == 1)
-        return Qt;
-    return Qnil;
+int string_bytes(emacs_env *env, emacs_value string) {
+    ptrdiff_t size = 0;
+    env->copy_string_contents(env, string, NULL, &size);
+    return size;
 }
 
 void e_message(emacs_env *env, char *msg_str)
@@ -249,130 +89,6 @@ void e_message(emacs_env *env, char *msg_str)
     emacs_value e_msg;
     e_msg = env->make_string(env, msg_str, strlen(msg_str));
     env->funcall(env, env->intern(env, "message"), 1, (emacs_value[]){e_msg});
-}
-
-//------------------------------------
-
-emacs_value Fewlc_get_active_client(emacs_env *env, ptrdiff_t nargs,
-                                    emacs_value args[], void *data)
-{
-    struct ewlc_server *srv;
-    struct ewlc_client *c;
-
-    srv = env->get_user_ptr(env, args[0]);
-    c = get_active_client(srv);
-    return env->make_user_ptr(env, NULL, c);
-}
-
-emacs_value Fewlc_get_active_output(emacs_env *env, ptrdiff_t nargs,
-                                    emacs_value args[], void *data)
-{
-    struct ewlc_server *srv;
-    struct ewlc_output *o;
-
-    srv = env->get_user_ptr(env, args[0]);
-    o = srv->active_output;
-    return env->make_user_ptr(env, NULL, o);
-}
-
-emacs_value Fewlc_get_client_list(emacs_env *env, ptrdiff_t nargs,
-                                  emacs_value args[], void *data)
-{
-    struct ewlc_server *srv;
-    struct ewlc_client *c;
-    emacs_value elements[128];
-    int len = 0;
-
-    srv = env->get_user_ptr(env, args[0]);
-
-    wl_list_for_each(c, &srv->client_list, client_link)
-    {
-        elements[len++] = env->make_user_ptr(env, NULL, c);
-    }
-    return list(env, elements, len);
-}
-
-emacs_value Fewlc_set_focus_list(emacs_env *env, ptrdiff_t nargs,
-                                 emacs_value args[], void *data)
-{
-    emacs_value focus_lst, val;
-    int len;
-    struct ewlc_server *srv;
-    struct ewlc_client *c;
-
-    srv = env->get_user_ptr(env, args[0]);
-    focus_lst = args[1];
-    len = length(env, focus_lst);
-    val = nth(env, 0, focus_lst);
-
-    if (len > 0) {
-        wl_list_init(&srv->client_focus_list);
-        for (int i = len - 1; i >= 0; i--) {
-            val = nth(env, i, focus_lst);
-            c = env->get_user_ptr(env, val);
-            wl_list_insert(&srv->client_focus_list, &c->client_focus_link);
-        }
-    }
-    return Qt;
-}
-
-
-emacs_value Fewlc_get_focus_list(emacs_env *env, ptrdiff_t nargs,
-                                 emacs_value args[], void *data)
-{
-    struct ewlc_server *srv;
-    struct ewlc_client *c;
-    emacs_value elements[128];
-    int len = 0;
-
-    srv = env->get_user_ptr(env, args[0]);
-
-    wl_list_for_each(c, &srv->client_focus_list, client_focus_link)
-    {
-        elements[len++] = env->make_user_ptr(env, NULL, c);
-    }
-    return list(env, elements, len);
-}
-
-emacs_value Fewlc_set_stack_list(emacs_env *env, ptrdiff_t nargs,
-                                 emacs_value args[], void *data)
-{
-    emacs_value stack_lst, val;
-    int len;
-    struct ewlc_server *srv;
-    struct ewlc_client *c;
-
-    srv = env->get_user_ptr(env, args[0]);
-    stack_lst = args[1];
-    len = length(env, stack_lst);
-    val = nth(env, 0, stack_lst);
-
-    if (len > 0) {
-        wl_list_init(&srv->client_stack_list);
-        for (int i = len - 1; i >= 0; i--) {
-            val = nth(env, i, stack_lst);
-            c = env->get_user_ptr(env, val);
-            wl_list_insert(&srv->client_stack_list, &c->client_stack_link);
-        }
-    }
-    return Qt;
-}
-
-emacs_value Fewlc_get_stack_list(emacs_env *env, ptrdiff_t nargs,
-                                 emacs_value args[], void *data)
-{
-    struct ewlc_server *srv;
-    struct ewlc_client *c;
-    emacs_value elements[128];
-    int len = 0;
-
-    srv = env->get_user_ptr(env, args[0]);
-
-    wl_list_for_each(c, &srv->client_stack_list, client_stack_link)
-    {
-        elements[len++] = env->make_user_ptr(env, NULL, c);
-    }
-    return list(env, elements, len);
 }
 
 emacs_value list(emacs_env *env, emacs_value elements[], ptrdiff_t len)
@@ -392,38 +108,10 @@ emacs_value nth(emacs_env *env, int idx, emacs_value lst)
     return env->funcall(env, Fnth, 2, (emacs_value[]){e_idx, lst});
 }
 
-emacs_value Fewlc_is_visible_on(emacs_env *env, ptrdiff_t nargs,
-                                emacs_value args[], void *data)
-{
-    struct ewlc_client *c;
-    struct ewlc_output *o;
-
-    c = env->get_user_ptr(env, args[0]);
-    o = env->get_user_ptr(env, args[1]);
-
-    if (is_visible_on(c, o)) {
-        return Qt;
-    }
-    return Qnil;
-}
-
-emacs_value Fewlc_focus_client(emacs_env *env, ptrdiff_t nargs,
-                               emacs_value args[], void *data)
-{
-    struct ewlc_client *c_curr;
-    struct ewlc_client *c_next;
-
-    c_curr = env->get_user_ptr(env, args[0]);
-    c_next = env->get_user_ptr(env, args[1]);
-
-    e_focus_client(c_curr, c_next);
-    return Qnil;
-}
-
 /*------------------------------------------------------------------------*/
 
 /* Bind NAME to FUN.  */
-static void bind_function(emacs_env *env, const char *name, emacs_value Sfun)
+void bind_function(emacs_env *env, const char *name, emacs_value Sfun)
 {
     emacs_value Qfset = env->intern(env, "fset");
     emacs_value Qsym = env->intern(env, name);
@@ -459,6 +147,15 @@ int emacs_module_init(struct emacs_runtime *ert)
     Fnth = env->make_global_ref(env, env->intern(env, "nth"));
 
     /* functions */
+
+    init_wlr_pointer(env);
+    init_wlr_backend(env);
+    init_wlr_cursor(env);
+    init_wlr_input_device(env);
+    init_wlr_keymap(env);
+    init_wlr_output(env);
+    init_wlr_box(env);
+
     func = env->make_function(env, 0, 0, Fewlc_start, "Start the compositor.",
                               NULL);
     bind_function(env, "ewlc-start", func);
