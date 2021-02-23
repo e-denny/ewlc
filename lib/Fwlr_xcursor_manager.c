@@ -1,49 +1,13 @@
-/*
- See LICENSE file for copyright and license details.
- */
 #define _POSIX_C_SOURCE 200809L
-#include "server.h"
-#include "util.h"
-#include "client.h"
-#include "output.h"
-// #include <linux/input-event-codes.h>
-#include <signal.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <emacs-module.h>
+#include "module.h"
+#include "Fwlr.h"
 #include <string.h>
-#include <sys/wait.h>
-#include <time.h>
-//#include <unistd.h>
+#include <stdlib.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h> */
-#include <wlr/render/wlr_renderer.h> */
-#include <wlr/types/wlr_compositor.h> */
-#include <wlr/types/wlr_cursor.h> */
-#include <wlr/types/wlr_data_device.h> */
-#include <wlr/types/wlr_export_dmabuf_v1.h> */
-#include <wlr/types/wlr_gamma_control_v1.h> */
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <wlr/types/wlr_matrix.h>
-#include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_pointer.h>
-#include <wlr/types/wlr_primary_selection.h>
-#include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_screencopy_v1.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
-#include <wlr/types/wlr_xdg_output_v1.h>
-#include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
-#include <xkbcommon/xkbcommon.h>
-
-#include <X11/Xlib.h>
-#include <wlr/xwayland.h>
 
 emacs_value Fwlr_xcursor_manager_set_cursor_image(emacs_env *env, ptrdiff_t nargs,
                                                   emacs_value args[], void *data)
@@ -64,7 +28,7 @@ emacs_value Fwlr_xcursor_manager_set_cursor_image(emacs_env *env, ptrdiff_t narg
 emacs_value Fwlr_xcursor_manager_create(emacs_env *env, ptrdiff_t nargs,
                                         emacs_value args[], void *data)
 {
-    /* don't bother with cursor theme - so name not assignable. */
+    /* don't bother with cursor theme - so 'name' not assignable at the moment. */
     char *name = NULL;
     int size = env->extract_integer(env, args[0]);
     struct wlr_xcursor_manager *cursor_mgr = wlr_xcursor_manager_create(name, size);
@@ -87,4 +51,20 @@ emacs_value Fwlr_xcursor_manager_load(emacs_env *env, ptrdiff_t nargs,
     if (wlr_xcursor_manager_load(cursor_mgr, scale))
         return Qt;
     return Qnil;
+}
+
+void init_wlr_xcursor_manager(emacs_env *env)
+{
+    emacs_value func;
+    func = env->make_function(env, 3, 3, Fwlr_xcursor_manager_set_cursor_image, "", NULL);
+    bind_function(env, "wlr-xcursor-manager-set-cursor-image", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_xcursor_manager_create, "", NULL);
+    bind_function(env, "wlr-xcursor-manager-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_xcursor_manager_destroy, "", NULL);
+    bind_function(env, "wlr-xcursor-manager-destroy", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_xcursor_manager_load, "", NULL);
+    bind_function(env, "wlr-xcursor-manager-load", func);
 }

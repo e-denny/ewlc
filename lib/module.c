@@ -154,135 +154,17 @@ int emacs_module_init(struct emacs_runtime *ert)
     init_wlr_input_device(env);
     init_wlr_keymap(env);
     init_wlr_output(env);
+    init_wlr_output_layout(env);
     init_wlr_box(env);
-
-    func = env->make_function(env, 0, 0, Fewlc_start, "Start the compositor.",
-                              NULL);
-    bind_function(env, "ewlc-start", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_display_dispatch,
-                              "Flush the compositor events.", NULL);
-    bind_function(env, "ewlc-display-dispatch", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_cleanup, "Cleanup after exit.",
-                              NULL);
-    bind_function(env, "ewlc-cleanup", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_focus_next_client,
-                              "Focus the next client.", NULL);
-    bind_function(env, "ewlc-focus-next-client", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_set_master_ratio,
-                              "Adjust master ratio.", NULL);
-    bind_function(env, "ewlc-set-master-ratio", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_add_master,
-                              "Set next master.", NULL);
-    bind_function(env, "ewlc-add-master", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_kill_client,
-                              "Kill the focused client.", NULL);
-    bind_function(env, "ewlc-kill-client", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_quit,
-                              "Quit the window manager.", NULL);
-    bind_function(env, "ewlc-quit", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_handle_keybindings,
-                              "Handle the keybindings.", NULL);
-    bind_function(env, "ewlc-handle-keybindings", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_handle_events,
-                              "Handle the events.", NULL);
-    bind_function(env, "ewlc-handle-events", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_zoom,
-                              "Zoom.", NULL);
-    bind_function(env, "ewlc-zoom", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_toggle_floating,
-                              "Toggle Floating.", NULL);
-    bind_function(env, "ewlc-toggle-floating", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_focus_output,
-                              "focus output.", NULL);
-    bind_function(env, "ewlc-focus-output", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_view,
-                              "view.", NULL);
-    bind_function(env, "ewlc-view", func);
-
-    func = env->make_function(env, 1, 2, Fewlc_spawn,
-                              "Spawn a command.", NULL);
-    bind_function(env, "ewlc-spawn", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_chvt,
-                              "Change VT.", NULL);
-    bind_function(env, "ewlc-chvt", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_get_active_client,
-                              "Get active client.", NULL);
-    bind_function(env, "ewlc/c--get-active-client", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_get_active_output,
-                              "Get active output.", NULL);
-    bind_function(env, "ewlc/c--get-active-output", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_get_client_list,
-                              "Get list of clients.", NULL);
-    bind_function(env, "ewlc/c--get-client-list", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_get_stack_list,
-                              "Get stack list of clients.", NULL);
-    bind_function(env, "ewlc/c--get-stack-list", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_set_stack_list,
-                              "Set stack list of clients.", NULL);
-    bind_function(env, "ewlc/c--set-stack-list", func);
-
-    func = env->make_function(env, 1, 1, Fewlc_get_focus_list,
-                              "Get list of focused clients.", NULL);
-    bind_function(env, "ewlc/c--get-focus-list", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_set_focus_list,
-                              "Set focus list of clients.", NULL);
-    bind_function(env, "ewlc/c--set-focus-list", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_is_visible_on,
-                              "Is the client visible on the output.", NULL);
-    bind_function(env, "ewlc/c--is-visible-on", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_focus_client,
-                              "Focus the client.", NULL);
-    bind_function(env, "ewlc/c--focus-client", func);
-
-    func = env->make_function(env, 2, 2, Fewlc_compare_clients,
-                              "Compare clients.", NULL);
-    bind_function(env, "ewlc/c--client=", func);
-
-    /* ------------------------------------------------------------ */
-
-    func = env->make_function(env, x, x,
-                              Fewlc_create_pointer,
-                              "Create a pointer.", NULL);
-    bind_function(env, "ewlc--c/create-pointer", func);
-
-    func = env->make_function(env, x, x,
-                              Fewlc_create_keyboard,
-                              "Create a keyboard.", NULL);
-    bind_function(env, "ewlc--c/create-keyboard", func);
-
-    func = env->make_function(env, x, x,
-                              Fewlc_set_seat_capabilities,
-                              "Set the seat's capabilites.", NULL);
-    bind_function(env, "ewlc--c/create-set-seat-capabilites", func);
-
-    func = env->make_function(env, x, x,
-                              Fewlc_get_device_type,
-                              "Get the input device type.", NULL);
-    bind_function(env, "ewlc--c/get-device-type", func);
-
-    /* ------------------------------------------------------------ */
+    init_wlr_renderer(env);
+    init_wlr_seat(env);
+    init_wlr_surface(env);
+    init_wlr_xcursor_manager(env);
+    init_wlr_misc(env);
+    init_wlr_xwayland(env);
+    init_wlr_xdg(env);
+    init_wl(env);
+    init_ewlc(env);
 
     provide(env, "ewlc");
 

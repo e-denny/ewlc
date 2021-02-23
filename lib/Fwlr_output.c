@@ -3,7 +3,8 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include <emacs-module.h>
-#include "Fwlr.h
+#include "module.h"
+#include "Fwlr.h"
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
@@ -38,7 +39,7 @@ emacs_value Fwlr_output_set_transform(emacs_env *env, ptrdiff_t nargs,
                                       emacs_value args[], void *data)
 {
     struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
-    // FIXME: add option of other transform enums.
+    // TODO: add option of other transform enums.
     wlr_output_set_transform(wlr_output, WL_OUTPUT_TRANSFORM_NORMAL);
     return Qt;
 }

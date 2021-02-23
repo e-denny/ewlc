@@ -35,59 +35,6 @@ enum {
     NetLast
 };
 
-struct ewlc_server;
-
-struct ewlc_output {
-    struct ewlc_server *server;
-    struct wl_listener output_frame_listener;
-    struct wl_listener output_destroy_listener;
-};
-
-struct ewlc_client {
-    struct ewlc_server *server;
-    struct ewlc_output *output;
-    struct wl_listener xwayland_surface_request_activate_listener;
-    struct wl_listener surface_commit_listener;
-    struct wl_listener surface_map_listener;
-    struct wl_listener surface_unmap_listener;
-    struct wl_listener surface_destroy_listener;
-};
-
-/* Used to move all of the data necessary to render a surface from the top-level
- * frame handler to the per-surface render function. */
-struct render_data {
-    struct wlr_output *output;
-    struct wlr_output_layout *output_layout;
-    struct wlr_renderer *renderer;
-    struct timespec when;
-    int x, y; /* layout-relative */
-};
-
-struct ewlc_output_rule {
-    const char *name;
-    float master_ratio;
-    int num_master;
-    float scale;
-    enum wl_output_transform rr;
-};
-
-struct ewlc_output;
-struct ewlc_server;
-
-typedef union {
-    int i;
-    unsigned int ui;
-    float f;
-    const void *v;
-} Arg;
-
-typedef struct {
-    unsigned int mod;
-    unsigned int button;
-    void (*func)(struct ewlc_server *srv, const Arg *);
-    const Arg arg;
-} Button;
-
 struct ewlc_server {
     struct key_node *key_list;
     struct event_node *event_list;
@@ -107,13 +54,35 @@ struct ewlc_server {
     struct wl_listener backend_new_input_listener;
     struct wl_listener backend_new_output_listener;
 
-
     struct wl_listener xdeco_mgr_new_top_level_decoration_listener;
 
     struct wl_listener new_xwayland_surface_listener;
     struct wl_listener xwayland_ready_listener;
+};
 
-    Button buttons[3];
+struct ewlc_output {
+    struct ewlc_server *server;
+    struct wl_listener output_frame_listener;
+    struct wl_listener output_destroy_listener;
+};
+
+struct ewlc_client {
+    struct ewlc_server *server;
+    // does this need to be here ?
+    struct ewlc_output *output;
+    struct wl_listener xwayland_surface_request_activate_listener;
+    struct wl_listener surface_commit_listener;
+    struct wl_listener surface_map_listener;
+    struct wl_listener surface_unmap_listener;
+    struct wl_listener surface_destroy_listener;
+};
+
+struct ewlc_output_rule {
+    const char *name;
+    float master_ratio;
+    int num_master;
+    float scale;
+    enum wl_output_transform rr;
 };
 
 struct ewlc_decoration {
@@ -132,7 +101,16 @@ struct ewlc_keyboard {
     struct wl_listener keyboard_destroy_listener;
 };
 
-// TODO: make a variable
+/* Used to move all of the data necessary to render a surface from the top-level
+ * frame handler to the per-surface render function. */
+struct render_data {
+    struct wlr_output *output;
+    struct wlr_output_layout *output_layout;
+    struct wlr_renderer *renderer;
+    struct timespec when;
+    int x, y; /* layout-relative */
+};
+
 #define MODKEY WLR_MODIFIER_ALT
 
 #endif // __SERVER_H_

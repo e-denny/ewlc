@@ -1,49 +1,17 @@
-/*
- See LICENSE file for copyright and license details.
- */
 #define _POSIX_C_SOURCE 200809L
+#include <emacs-module.h>
+#include "module.h"
+#include "Fwlr.h"
 #include "server.h"
-#include "util.h"
-#include "client.h"
-#include "output.h"
-// #include <linux/input-event-codes.h>
-#include <signal.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <time.h>
-//#include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h> */
-#include <wlr/render/wlr_renderer.h> */
-#include <wlr/types/wlr_compositor.h> */
-#include <wlr/types/wlr_cursor.h> */
-#include <wlr/types/wlr_data_device.h> */
-#include <wlr/types/wlr_export_dmabuf_v1.h> */
-#include <wlr/types/wlr_gamma_control_v1.h> */
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <wlr/types/wlr_matrix.h>
-#include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_pointer.h>
-#include <wlr/types/wlr_primary_selection.h>
-#include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_screencopy_v1.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_viewporter.h>
-#include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
-#include <wlr/types/wlr_xdg_output_v1.h>
+#include <wlr/types/wlr_surface.h>
 #include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
-#include <xkbcommon/xkbcommon.h>
-
-#include <X11/Xlib.h>
-#include <wlr/xwayland.h>
 
 
 emacs_value Fwlr_surface_send_frame_done(emacs_env *env, ptrdiff_t nargs,
@@ -87,6 +55,24 @@ emacs_value Fwlr_surface_current_height(emacs_env *env, ptrdiff_t nargs,
     return env->make_user_ptr(env, NULL, surface->current.height);
 }
 
+emacs_value Fwlr_surface_send_leave(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
+{
+    struct wlr_surface *surface = env->get_user_ptr(env, args[0]);
+    struct wlr_output *output = env->get_user_ptr(env, args[1]);
+    wlr_surface_send_leave(surface, output);
+    return Qt;
+}
+
+emacs_value Fwlr_surface_send_enter(emacs_env *env, ptrdiff_t nargs,
+                                    emacs_value args[], void *data)
+{
+    struct wlr_surface *surface = env->get_user_ptr(env, args[0]);
+    struct wlr_output *output = env->get_user_ptr(env, args[1]);
+    wlr_surface_send_enter(surface, output);
+    return Qt;
+}
+
 emacs_value Fwlr_surface_for_each_surface_render(emacs_env *env, ptrdiff_t nargs,
                                                  emacs_value args[], void *data)
 {
@@ -94,4 +80,29 @@ emacs_value Fwlr_surface_for_each_surface_render(emacs_env *env, ptrdiff_t nargs
     struct render_data *r_data = env->get_user_ptr(env, args[1]);
     wlr_surface_for_each_surface(surface, render_surface, r_data);
     return Qt;
+}
+
+void init_wlr_surface(emacs_env *env)
+{
+    emacs_value func;
+    func = env->make_function(env, 2, 2, Fwlr_surface_send_frame_done, "", NULL);
+    bind_function(env, "wlr-surface-send-frame-done", func);
+
+    func = env->make_function(env, 3, 3, Fwlr_surface_surface_at, "", NULL);
+    bind_function(env, "wlr-surface-surface-at", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_surface_current_width, "", NULL);
+    bind_function(env, "wlr-surface-current-width", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_surface_current_height, "", NULL);
+    bind_function(env, "wlr-surface-current-height", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_surface_send_leave, "", NULL);
+    bind_function(env, "wlr-surface-send-leave", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_surface_send_enter, "", NULL);
+    bind_function(env, "wlr-surface-send-enter", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_surface_for_each_surface_render, "", NULL);
+    bind_function(env, "wlr-surface-for-each-surface-render", func);
 }

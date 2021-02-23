@@ -1,9 +1,7 @@
-/*
- See LICENSE file for copyright and license details.
- */
 #define _POSIX_C_SOURCE 200809L
 #include <emacs-module.h>
-#include "Fwlr.h
+#include "module.h"
+#include "Fwlr.h"
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/backend.h>
@@ -40,12 +38,12 @@ emacs_value Fwlr_backend_start(emacs_env *env, ptrdiff_t nargs,
 void init_wlr_backend(emacs_env *env)
 {
     emacs_value func;
-    func = env->make_function(env, 2, 2, Fwlr_backend_autocreate, "", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_backend_autocreate, "", NULL);
     bind_function(env, "wlr-backend-autocreate", func);
 
-    func = env->make_function(env, 2, 2, Fwlr_backend_get_renderer, "", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_backend_get_renderer, "", NULL);
     bind_function(env, "wlr-backend-get-renderer", func);
 
     func = env->make_function(env, 1, 1, Fwlr_backend_start, "", NULL);
-    bind_function(env, "wlr-backend-start, func);
+    bind_function(env, "wlr-backend-start", func);
 }

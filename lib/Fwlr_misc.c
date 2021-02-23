@@ -1,48 +1,24 @@
-/*
- See LICENSE file for copyright and license details.
- */
 #define _POSIX_C_SOURCE 200809L
+#include <emacs-module.h>
+#include "module.h"
+#include "Fwlr.h"
 #include "server.h"
-#include "util.h"
-#include "client.h"
-#include "output.h"
-// #include <linux/input-event-codes.h>
-#include <signal.h>
-#include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <time.h>
-//#include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h> */
-#include <wlr/render/wlr_renderer.h> */
-#include <wlr/types/wlr_compositor.h> */
-#include <wlr/types/wlr_cursor.h> */
-#include <wlr/types/wlr_data_device.h> */
-#include <wlr/types/wlr_export_dmabuf_v1.h> */
-#include <wlr/types/wlr_gamma_control_v1.h> */
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <wlr/types/wlr_matrix.h>
-#include <wlr/types/wlr_output.h>
+#include <wlr/render/wlr_renderer.h>
+#include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_export_dmabuf_v1.h>
+#include <wlr/types/wlr_gamma_control_v1.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_screencopy_v1.h>
-#include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_viewporter.h>
-#include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
-#include <xkbcommon/xkbcommon.h>
-
-#include <X11/Xlib.h>
 #include <wlr/xwayland.h>
 
 
@@ -113,9 +89,65 @@ emacs_value Fwlr_viewporter_create(emacs_env *env, ptrdiff_t nargs,
 }
 
 emacs_value Fwlr_xdg_output_manager_v1_create(emacs_env *env, ptrdiff_t nargs,
-                                             emacs_value args[], void *data)
+                                              emacs_value args[], void *data)
 {
     struct wl_display *display = env->get_user_ptr(env, args[0]);
     struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[1]);
     struct wlr_xdg_output_manager_v1 *mgr = wlr_xdg_output_manager_v1_create(display, output_layout);
     return env->make_user_ptr(env, NULL, mgr);
+}
+
+// FIXME: this is not exposed to emacs
+void deco_destroy_handler(struct wl_listener *listener, void *data)
+{
+    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = data;
+    struct ewlc_decoration *d = wlr_deco->data;
+
+    wl_list_remove(&d->deco_destroy_listener.link);
+    wl_list_remove(&d->deco_request_mode_listener.link);
+    free(d);
+}
+
+emacs_value Fwlr_xdg_toplevel_decoration_v1_set_mode(emacs_env *env, ptrdiff_t nargs,
+                                                     emacs_value args[], void *data)
+{
+    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[0]);
+    wlr_xdg_toplevel_decoration_v1_set_mode(wlr_deco,
+                                            WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    return Qt;
+}
+
+void init_wlr_misc(emacs_env *env)
+{
+    emacs_value func;
+
+    func = env->make_function(env, 2, 2, Fwlr_compositor_create, "", NULL);
+    bind_function(env, "wlr-compositor-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_xdg_decoration_manager_v1_create, "", NULL);
+    bind_function(env, "wlr-xdg-decoration-manager-v1-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_export_dmabuf_manager_v1_create, "", NULL);
+    bind_function(env, "wlr-export-dmabuf-manager-v1-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_screencopy_v1_create, "", NULL);
+    bind_function(env, "wlr-screencopy-v1-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_data_device_manager_create, "", NULL);
+    bind_function(env, "wlr-data-device-manager-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_gamma_control_manager_v1_create, "", NULL);
+    bind_function(env, "wlr-gamma-control-manager-v1-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_primary_selection_v1_device_manager_create, "", NULL);
+    bind_function(env, "wlr-primary-selection-v1-device-manager-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_viewporter_create, "", NULL);
+    bind_function(env, "wlr-viewporter-create", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_xdg_output_manager_v1_create, "", NULL);
+    bind_function(env, "wlr-xdg-output-manager-v1-create", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_xdg_toplevel_decoration_v1_set_mode, "", NULL);
+    bind_function(env, "wlr-xdg-output-toplevel-decoration-v1-set-mode", func);
+}

@@ -3,7 +3,8 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include <emacs-module.h>
-#include "Fwlc.h"
+#include "module.h"
+#include "Fwlr.h"
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_cursor.h>
@@ -36,7 +37,6 @@ emacs_value Fwlr_cursor_warp_closest(emacs_env *env, ptrdiff_t nargs,
     struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
     int x = env->extract_integer(env, args[1]);
     int y = env->extract_integer(env, args[2]);
-
     wlr_cursor_warp_closest(cursor, NULL, x, y);
     return Qt;
 }
@@ -53,7 +53,7 @@ emacs_value Fwlr_cursor_warp_absolute(emacs_env *env, ptrdiff_t nargs,
 emacs_value Fwlr_cursor_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
 {
     struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
-    // TODO: should this be double or int?
+    // TODO: should this be float or int?
     return env->make_integer(env, cursor->x);
 }
 
@@ -79,6 +79,16 @@ emacs_value Fwlr_cursor_attach_output_layout(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
+emacs_value Fwlr_cursor_attach_input_device(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value args[], void *data)
+{
+    struct wlr_cursor *cursor = env->get_user_ptr(env, args[0]);
+    struct wlr_input_device *device = env->get_user_ptr(env, args[1]);
+    /* TODO: libinput configuration on the device to set acceleration, etc. */
+    wlr_cursor_attach_input_device(cursor, device);
+    return Qt;
+}
+
 emacs_value Fwlr_cursor_destroy(emacs_env *env, ptrdiff_t nargs,
                                 emacs_value args[], void *data)
 {
@@ -98,26 +108,26 @@ void init_wlr_cursor(emacs_env *env)
     bind_function(env, "wlr-cursor-set-surface", func);
 
     func = env->make_function(env, 3, 3, Fwlr_cursor_warp_closest, "", NULL);
-    bind_function(env, "wlr-cursor-warp-closest, func);
+    bind_function(env, "wlr-cursor-warp-closest", func);
 
     func = env->make_function(env, 2, 2, Fwlr_cursor_warp_absolute, "", NULL);
-    bind_function(env, "wlr-cursor-warp-absolute, func);
+    bind_function(env, "wlr-cursor-warp-absolute", func);
 
     func = env->make_function(env, 1, 1, Fwlr_cursor_x, "", NULL);
-    bind_function(env, "wlr-cursor-x, func);
+    bind_function(env, "wlr-cursor-x", func);
 
     func = env->make_function(env, 1, 1, Fwlr_cursor_y, "", NULL);
-    bind_function(env, "wlr-cursor-y, func);
-
-    func = env->make_function(env, 1, 1, Fwlr_cursor_y, "", NULL);
-    bind_function(env, "wlr-cursor-y, func);
+    bind_function(env, "wlr-cursor-y", func);
 
     func = env->make_function(env, 0, 0, Fwlr_cursor_create, "", NULL);
-    bind_function(env, "wlr-cursor-create, func);
+    bind_function(env, "wlr-cursor-create", func);
 
     func = env->make_function(env, 2, 2, Fwlr_cursor_attach_output_layout, "", NULL);
-    bind_function(env, "wlr-cursor-attach-output-layout, func);
+    bind_function(env, "wlr-cursor-attach-output-layout", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_cursor_attach_input_device, "", NULL);
+    bind_function(env, "wlr-cursor-attach-output-layout", func);
 
     func = env->make_function(env, 1, 1, Fwlr_cursor_destroy, "", NULL);
-    bind_function(env, "wlr-cursor-destroy, func);
+    bind_function(env, "wlr-cursor-destroy", func);
 }

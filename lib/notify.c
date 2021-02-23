@@ -52,6 +52,55 @@
 #include <wlr/xwayland.h>
 #endif
 
+struct event_node *create_event(struct wl_listener *listener, void *data, int type)
+{
+    struct event_node *new_node = (struct event_node *)malloc(sizeof(struct event_node));
+    if (new_node == NULL)
+        ERROR("Error creating a new node.\n");
+
+    new_node->listener = listener;
+    new_node->data = data;
+    new_node->type = type;
+    new_node->next = NULL;
+    return new_node;
+}
+
+struct event_node *add_event(struct event_node *list, struct event_node *new_node)
+{
+    /* add event to end of list */
+    struct event_node *cursor;
+
+    cursor = list;
+    /* go to the last node */
+    if (cursor == NULL) {
+        list = new_node;
+    } else {
+        while (cursor->next != NULL)
+            cursor = cursor->next;
+        cursor->next = new_node;
+    }
+    return list;
+}
+
+struct event_node *remove_event(struct event_node *list)
+{
+    /* remove event from start of list. */
+    struct event_node *front;
+
+    if (list == NULL)
+        return NULL;
+
+    front = list;
+    list = list->next;
+    front->next = NULL;
+
+    /* is this the last node in the list */
+    if (front == list)
+        list = NULL;
+    free(front);
+    return list;
+}
+
 // ----------------------------------------------------------------------
 
 void xwayland_ready_notify(struct wl_listener *listener, void *data)
@@ -368,28 +417,64 @@ void backend_new_input_notify(struct wl_listener *listener, void *data)
 
 /* void keyboard_key_notify(struct wl_listener *listener, void *data) */
 /* { */
-/*     struct ewlc_keyboard *kb; */
-/*     struct ewlc_server *s; */
-/*     struct event_node *e_node; */
+/*     /\* This event is raised when a key is pressed or released. *\/ */
+/*     struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_key_listener); */
 /*     struct wlr_event_keyboard_key *event = data; */
-/*     struct wlr_event_keyboard_key *event_cpy = calloc(1, sizeof(*event_cpy)); */
+/*     struct ewlc_server *srv = kb->server; */
+/*     /\* Translate libinput keycode -> xkbcommon *\/ */
+/*     uint32_t keycode = event->keycode + 8; */
+/*     /\* Get a list of keysyms based on the keymap for this keyboard *\/ */
+/*     const xkb_keysym_t *syms; */
+/*     int nsyms; */
+/*     uint32_t mods; */
 
-/*     INFO(">>>"); */
-/*     event_cpy->keycode = event->keycode; */
-/*     event_cpy->state = event->state; */
-/*     event_cpy->time_msec = event->time_msec; */
+/*     nsyms = xkb_state_key_get_syms(kb->device->keyboard->xkb_state, */
+/*                                        keycode, &syms); */
+/*     DEBUG("nsyms = '%d'", nsyms); */
+/*     mods = wlr_keyboard_get_modifiers(kb->device->keyboard); */
+/*     DEBUG("mods = '%d'", mods); */
 
-/*     DEBUG("event: %p", event_cpy); */
-/*     DEBUG("event keycode: %d", event_cpy->keycode); */
-/*     DEBUG("event state: %d", event_cpy->state); */
-/*     DEBUG("event time: %d", event_cpy->time_msec); */
+/*     /\* On _press_ and mod, and to list to check if a compositor keybinding. *\/ */
+/*     if (event->state == WLR_KEY_PRESSED && */
+/*         (mods & WLR_MODIFIER_ALT) == WLR_MODIFIER_ALT) { */
+/*         DEBUG("mod: %d", WLR_MODIFIER_ALT); */
+/*         DEBUG("nsyms: %d", nsyms); */
+/*         for (int i = 0; i < nsyms; i++) { */
+/*             DEBUG("i: %d", i); */
+/*             srv->key_list = add_to_end(srv->key_list, mods, syms[i], kb, event); */
+/*         } */
+/*         INFO("<<<return"); */
+/*         return; */
+/*     } */
 
-/*     kb = wl_container_of(listener, kb, keyboard_key_listener); */
-/*     s = kb->server; */
-/*     e_node = create_event(listener, (void *)event_cpy, EWLC_KEYBOARD_KEY); */
-/*     s->event_list = add_event(s->event_list, e_node); */
+/*     /\* Pass non-modifier keycodes straight to the client. *\/ */
+/*     DEBUG("seat = '%p'", srv->seat); */
+/*     DEBUG("device = '%p'", kb->device); */
+
+/*     wlr_seat_set_keyboard(srv->seat, kb->device); */
+/*     wlr_seat_keyboard_notify_key(srv->seat, event->time_msec, */
+/*                                  event->keycode, event->state); */
 /*     INFO("<<<"); */
+/*     // free(event); */
 /* } */
+
+void keyboard_key_notify(struct wl_listener *listener, void *data)
+{
+    struct ewlc_keyboard *kb;
+    struct ewlc_server *s;
+    struct event_node *e_node;
+    struct wlr_event_keyboard_key *event = data;
+    struct wlr_event_keyboard_key *event_cpy = calloc(1, sizeof(*event_cpy));
+
+    event_cpy->keycode = event->keycode;
+    event_cpy->state = event->state;
+    event_cpy->time_msec = event->time_msec;
+
+    kb = wl_container_of(listener, kb, keyboard_key_listener);
+    s = kb->server;
+    e_node = create_event(listener, (void *)event_cpy, EWLC_KEYBOARD_KEY);
+    s->event_list = add_event(s->event_list, e_node);
+}
 
 void keyboard_modifiers_notify(struct wl_listener *listener, void *data)
 {

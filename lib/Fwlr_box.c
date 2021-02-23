@@ -2,8 +2,10 @@
  See LICENSE file for copyright and license details.
  */
 #define _POSIX_C_SOURCE 200809L
+#include <stdlib.h>
 #include <emacs-module.h>
-#include "Fwlr.h
+#include "module.h"
+#include "Fwlr.h"
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_cursor.h>
@@ -40,6 +42,7 @@ emacs_value Fwlr_scale_box(emacs_env *env, ptrdiff_t nargs,
     box->y *= scale;
     box->width *= scale;
     box->height *= scale;
+    return Qt;
 }
 
 emacs_value Fwlr_box_x(emacs_env *env, ptrdiff_t nargs, emacs_value args[], void *data)
@@ -115,24 +118,24 @@ void init_wlr_box(emacs_env *env)
     func = env->make_function(env, 1, 1, Fwlr_box_x, "", NULL);
     bind_function(env, "wlr-box-x", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_set_box_x, "", NULL);
+    func = env->make_function(env, 2, 2, Fwlr_set_box_x, "", NULL);
     bind_function(env, "wlr-set-box-x", func);
 
     func = env->make_function(env, 1, 1, Fwlr_box_y, "", NULL);
     bind_function(env, "wlr-box-y", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_set_box_y, "", NULL);
+    func = env->make_function(env, 2, 2, Fwlr_set_box_y, "", NULL);
     bind_function(env, "wlr-set-box-y", func);
 
     func = env->make_function(env, 1, 1, Fwlr_box_width, "", NULL);
     bind_function(env, "wlr-box-width", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_set_box_width, "", NULL);
+    func = env->make_function(env, 2, 2, Fwlr_set_box_width, "", NULL);
     bind_function(env, "wlr-set-box-width", func);
 
     func = env->make_function(env, 1, 1, Fwlr_box_height, "", NULL);
     bind_function(env, "wlr-box-height", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_set_box_height, "", NULL);
+    func = env->make_function(env, 2, 2, Fwlr_set_box_height, "", NULL);
     bind_function(env, "wlr-set-box-height", func);
 }

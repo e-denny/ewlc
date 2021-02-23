@@ -2,48 +2,36 @@
  See LICENSE file for copyright and license details.
  */
 #define _POSIX_C_SOURCE 200809L
-#include "server.h"
-#include "util.h"
-#include "client.h"
-#include "output.h"
-// #include <linux/input-event-codes.h>
-#include <signal.h>
-#include <stdbool.h>
-#include <stdio.h>
+#include <emacs-module.h>
+#include "module.h"
+#include "Fwlr.h"
 #include <stdlib.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <time.h>
-//#include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h> */
-#include <wlr/render/wlr_renderer.h> */
-#include <wlr/types/wlr_compositor.h> */
-#include <wlr/types/wlr_cursor.h> */
-#include <wlr/types/wlr_data_device.h> */
-#include <wlr/types/wlr_export_dmabuf_v1.h> */
-#include <wlr/types/wlr_gamma_control_v1.h> */
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <wlr/types/wlr_matrix.h>
-#include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_surface.h>
+#include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_screencopy_v1.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_viewporter.h>
-#include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
-#include <wlr/types/wlr_xdg_output_v1.h>
-#include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
-#include <xkbcommon/xkbcommon.h>
+#include <wlr/types/wlr_selection.h>
 
-#include <X11/Xlib.h>
-#include <wlr/xwayland.h>
+emacs_value Fwlr_seat_create(emacs_env *env, ptrdiff_t nargs,
+                             emacs_value args[], void *data)
+{
+    struct wl_display *display = env->get_user_ptr(env, args[0]);
+    char* name;
+    ptrdiff_t len = 0;
+    env->copy_string_contents(env, args[1], NULL, &len);
+    name = malloc(sizeof(char) * len);
+    env->copy_string_contents(env, args[1], name, &len);
+
+    struct wlr_seat *seat = wlr_seat_create(display, name);
+    // TODO: free the seat, put in finalizer ?
+    return env->make_user_ptr(env, NULL, seat);
+}
 
 emacs_value Fwlr_seat_pointer_notify_clear_focus(emacs_env *env, ptrdiff_t nargs,
                                                  emacs_value args[], void *data)
@@ -94,21 +82,6 @@ emacs_value Fwlr_seat_keyboard_notify_clear_focus(emacs_env *env, ptrdiff_t narg
     return Qt;
 }
 
-emacs_value Fwlr_seat_create(emacs_env *env, ptrdiff_t nargs,
-                             emacs_value args[], void *data)
-{
-    char* name;
-    ptrdiff_t len = 0;
-    struct wl_display *display = env->get_user_ptr(env, args[0]);
-    env->copy_string_contents(env, args[1], NULL, &len);
-    name = malloc(sizeof(char) * len);
-    env->copy_string_contents(env, args[1], name, &len);
-
-    struct wlr_seat *seat = wlr_seat_create(display, name);
-    // TODO: free the seat, put in finalizer ?
-    return env->make_user_ptr(env, NULL, seat);
-}
-
 emacs_value Fwlr_seat_set_keyboard(emacs_env *env, ptrdiff_t nargs,
                                    emacs_value args[], void *data)
 {
@@ -118,20 +91,25 @@ emacs_value Fwlr_seat_set_keyboard(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
-emacs_value Fwlr_set_seat_capabilities(emacs_env *env, ptrdiff_t nargs,
+emacs_value Fwlr_seat_get_keyboard(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+    return env->make_user_ptr(env, NULL, keyboard);
+}
+
+emacs_value Fwlr_seat_set_capabilities(emacs_env *env, ptrdiff_t nargs,
                                        emacs_value args[], void *data)
 {
     uint32_t caps;
-    struct wlr_seat *seat;
-    emacs_value keyboard_exists;
-
-    seat = env->get_user_ptr(env, args[0]);
-    keyboard_exists = args[1];
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    emacs_value keyboard_exists = args[1];
 
     caps = WL_SEAT_CAPABILITY_POINTER;
     if (keyboard_exists == Qt)
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
-    wlr_seat_set_capabilities(srv->seat, caps);
+    wlr_seat_set_capabilities(seat, caps);
     return Qt;
 }
 
@@ -139,8 +117,19 @@ emacs_value Fwlr_seat_keyboard_notify_modifiers(emacs_env *env, ptrdiff_t nargs,
                                                 emacs_value args[], void *data)
 {
     struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
-    struct ewlc_keyboard *kb = env->get_user_ptr(env, args[1]);
-    wlr_seat_keyboard_notify_modifiers(seat, &kb->device->keyboard->modifiers);
+    struct wlr_input_device *device = env->get_user_ptr(env, args[1]);
+    wlr_seat_keyboard_notify_modifiers(seat, &device->keyboard->modifiers);
+    return Qt;
+}
+
+emacs_value Fwlr_seat_keyboard_notify_key(emacs_env *env, ptrdiff_t nargs,
+                                          emacs_value args[], void *data)
+{
+    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
+    int time_msec = env->extract_integer(env, args[1]);
+    int key = env->extract_integer(env, args[2]);
+    int state = env->extract_integer(env, args[3]);
+    wlr_seat_keyboard_notify_key(seat, time_msec, key, state);
     return Qt;
 }
 
@@ -149,25 +138,23 @@ emacs_value Fwlr_seat_pointer_notify_axis(emacs_env *env, ptrdiff_t nargs,
 {
     struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
     struct wlr_event_pointer_axis *event = env->get_user_ptr(env, args[1]);
-    wlr_seat_pointer_notify_axis(seat, event->time_msec,
-                                 event->orientation, event->delta,
+    wlr_seat_pointer_notify_axis(seat, event->time_msec, event->orientation, event->delta,
                                  event->delta_discrete, event->source);
     return Qt;
 }
 
 emacs_value Fwlr_seat_pointer_notify_button(emacs_env *env, ptrdiff_t nargs,
-                                             emacs_value args[], void *data)
+                                            emacs_value args[], void *data)
 {
     struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
     struct wlr_event_pointer_button *event = env->get_user_ptr(env, args[1]);
 
-    wlr_seat_pointer_notify_button(seat, event->time_msec, event->button,
-                                   event->state);
+    wlr_seat_pointer_notify_button(seat, event->time_msec, event->button, event->state);
     return Qt;
 }
 
 emacs_value Fwlr_seat_pointer_notify_frame(emacs_env *env, ptrdiff_t nargs,
-                                            emacs_value args[], void *data)
+                                           emacs_value args[], void *data)
 {
     struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
     /* Notify the client with pointer focus of the frame event. */
@@ -175,21 +162,73 @@ emacs_value Fwlr_seat_pointer_notify_frame(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
-emacs_value Fewlc_seat_set_primary_selection(emacs_env *env, ptrdiff_t nargs,
-                                             emacs_value args[], void *data)
+emacs_value Fwlr_seat_set_primary_selection(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value args[], void *data)
 {
     struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
-    struct wlr_seat_request_set_primary_selection_event *event =
-        env->get_user_ptr(env, args[1]);
+    struct wlr_seat_request_set_primary_selection_event *event = env->get_user_ptr(env, args[1]);
     wlr_seat_set_primary_selection(seat, event->source, event->serial);
     return Qt;
 }
 
-emacs_value Fwlr_seat_set_selection(emacs_env *env, ptrdiff_t nargs,
-                                     emacs_value args[], void *data)
+/* emacs_value Fwlr_seat_set_selection(emacs_env *env, ptrdiff_t nargs, */
+/*                                      emacs_value args[], void *data) */
+/* { */
+/*     struct wlr_seat *seat = env->get_user_ptr(env, args[0]); */
+/*     struct wlr_seat_request_set_selection_event *event = env->get_user_ptr(env, args[1]); */
+/*     // FIXME: what happened to this function - where is it? */
+/*     wlr_seat_set_selection(seat, event->source, event->serial); */
+/*     return Qt; */
+/* } */
+
+void init_wlr_seat(emacs_env *env)
 {
-    struct wlr_seat *seat = env->get_user_ptr(env, args[0]);
-    struct wlr_seat_request_set_selection_event *event = env->get_user_ptr(env, args[1]);
-    wlr_seat_set_selection(seat, event->source, event->serial);
-    return Qt;
+    emacs_value func;
+    func = env->make_function(env, 2, 2, Fwlr_seat_create, "", NULL);
+    bind_function(env, "wlr-seat-create", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_seat_pointer_notify_clear_focus, "", NULL);
+    bind_function(env, "wlr-seat-pointer-notify-clear-focus", func);
+
+    func = env->make_function(env, 4, 4, Fwlr_seat_pointer_notify_motion, "", NULL);
+    bind_function(env, "wlr-seat-pointer-notify-motion", func);
+
+    func = env->make_function(env, 4, 4, Fwlr_seat_pointer_enter, "", NULL);
+    bind_function(env, "wlr-seat-pointer-enter", func);
+
+    func = env->make_function(env, 3, 3, Fwlr_seat_keyboard_notify_enter, "", NULL);
+    bind_function(env, "wlr-seat-keyboard-notify-enter", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_seat_keyboard_notify_clear_focus, "", NULL);
+    bind_function(env, "wlr-seat-keyboard-notify-clear-focus", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_seat_set_keyboard, "", NULL);
+    bind_function(env, "wlr-seat-set-keyboard", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_seat_get_keyboard, "", NULL);
+    bind_function(env, "wlr-seat-get-keyboard", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_seat_set_capabilities, "", NULL);
+    bind_function(env, "wlr-seat-set-keyboard", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_seat_keyboard_notify_modifiers, "", NULL);
+    bind_function(env, "wlr-seat-keyboard-notify-modifiers", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_seat_pointer_notify_axis, "", NULL);
+    bind_function(env, "wlr-seat-pointer-notify-modifiers", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_seat_pointer_notify_button, "", NULL);
+    bind_function(env, "wlr-seat-pointer-notify-button", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_seat_pointer_notify_frame, "", NULL);
+    bind_function(env, "wlr-seat-pointer-notify-frame", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_seat_set_primary_selection, "", NULL);
+    bind_function(env, "wlr-seat-set-primary-selection", func);
+
+    func = env->make_function(env, 4, 4, Fwlr_seat_keyboard_notify_key, "", NULL);
+    bind_function(env, "wlr-seat-keyboard-notify-key", func);
+
+    /* func = env->make_function(env, 2, 2, Fwlr_seat_set_selection, "", NULL); */
+    /* bind_function(env, "wlr-seat-set-selection", func); */
 }

@@ -1,49 +1,19 @@
-/*
- See LICENSE file for copyright and license details.
- */
 #define _POSIX_C_SOURCE 200809L
-#include "server.h"
-#include "util.h"
-#include "client.h"
-#include "output.h"
-// #include <linux/input-event-codes.h>
-#include <signal.h>
-#include <stdbool.h>
+#include <emacs-module.h>
+#include "module.h"
+#include "Fwlr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
-#include <time.h>
-//#include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h> */
-#include <wlr/render/wlr_renderer.h> */
-#include <wlr/types/wlr_compositor.h> */
-#include <wlr/types/wlr_cursor.h> */
-#include <wlr/types/wlr_data_device.h> */
-#include <wlr/types/wlr_export_dmabuf_v1.h> */
-#include <wlr/types/wlr_gamma_control_v1.h> */
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <wlr/types/wlr_matrix.h>
-#include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_pointer.h>
-#include <wlr/types/wlr_primary_selection.h>
-#include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_screencopy_v1.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_viewporter.h>
-#include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
-#include <wlr/types/wlr_xdg_output_v1.h>
-#include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
-#include <xkbcommon/xkbcommon.h>
 
-#include <X11/Xlib.h>
-#include <wlr/xwayland.h>
+emacs_value Fwl_display_create(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wl_display *d = wl_display_create();
+    return env->make_user_ptr(env, NULL, d);
+}
 
 emacs_value Fwl_display_terminate(emacs_env *env, ptrdiff_t nargs,
                                   emacs_value args[], void *data)
@@ -53,18 +23,11 @@ emacs_value Fwl_display_terminate(emacs_env *env, ptrdiff_t nargs,
     return Qt;
 }
 
-emacs_value Fwl_display_create(emacs_env *env, ptrdiff_t nargs,
-                               emacs_value args[], void *data)
-{
-    struct wl_display *d = wl_display_create();
-    return env->make_user_ptr(env, NULL, d);
-}
-
 emacs_value Fwl_display_add_socket_auto(emacs_env *env, ptrdiff_t nargs,
                                         emacs_value args[], void *data)
 {
     struct wl_display *display = env->get_user_ptr(env, args[0]);
-    char *socket = wl_display_add_socket_auto(srv->display);
+    const char *socket = wl_display_add_socket_auto(display);
     return env->make_string(env, socket, strlen(socket));
 }
 
@@ -107,4 +70,32 @@ emacs_value Fwl_event_loop_dispatch(emacs_env *env, ptrdiff_t nargs,
     if (wl_event_loop_dispatch(loop, timeout) == 0)
         return Qt;
     return Qnil;
+}
+
+void init_wl(emacs_env *env)
+{
+    emacs_value func;
+    func = env->make_function(env, 0, 0, Fwl_display_create, "", NULL);
+    bind_function(env, "wl-display-create", func);
+
+    func = env->make_function(env, 1, 1, Fwl_display_terminate, "", NULL);
+    bind_function(env, "wl-display-terminate", func);
+
+    func = env->make_function(env, 1, 1, Fwl_display_add_socket_auto, "", NULL);
+    bind_function(env, "wl-display-add-socket-auto", func);
+
+    func = env->make_function(env, 1, 1, Fwl_display_destroy_clients, "", NULL);
+    bind_function(env, "wl-display-destroy-clients", func);
+
+    func = env->make_function(env, 1, 1, Fwl_display_destroy, "", NULL);
+    bind_function(env, "wl-display-destroy", func);
+
+    func = env->make_function(env, 1, 1, Fwl_display_get_event_loop, "", NULL);
+    bind_function(env, "wl-display-get-event-loop", func);
+
+    func = env->make_function(env, 1, 1, Fwl_display_flush_clients, "", NULL);
+    bind_function(env, "wl-display-flush-clients", func);
+
+    func = env->make_function(env, 2, 2, Fwl_event_loop_dispatch, "", NULL);
+    bind_function(env, "wl-event-loop-dispatch", func);
 }
