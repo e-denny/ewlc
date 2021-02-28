@@ -2,7 +2,6 @@
 #define __NOTIFY_H_
 
 #define _POSIX_C_SOURCE 200809L
-#include <emacs-module.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <stdio.h>
@@ -14,7 +13,7 @@
         fprintf(stderr, fmt "\n", ##__VA_ARGS__);                              \
         exit(EXIT_FAILURE);                                                    \
     } while (0)
-#define EERROR(fmt, ...) ERROR(fmt ": %s", ##__VA_ARGS__, strerror(errno))
+
 #define CLEANMASK(mask) (mask & ~WLR_MODIFIER_CAPS)
 
 #define INFO(msg) \
@@ -27,15 +26,17 @@
     fprintf(stderr, "\n");
 
 struct event_node {
-    struct wl_listener *listener;
-    void *data;
-    int type;
+    void *event_container;
+    void *event_data;
+    char *event_type;
     struct event_node *next;
 };
 
-struct event_node *create_event(struct wl_listener *listener, void *data, int type);
+struct event_node *create_event(void *event_container, void *event_data, char* event_type);
 struct event_node *add_event(struct event_node *list, struct event_node *new_node);
 struct event_node *remove_event(struct event_node *list);
+
+
 void cursor_axis_notify(struct wl_listener *listener, void *data);
 void cursor_button_notify(struct wl_listener *listener, void *data);
 void cursor_frame_notify(struct wl_listener *listener, void *data);

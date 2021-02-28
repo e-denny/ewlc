@@ -52,3 +52,5 @@ Mkfile.old
 dkms.conf
 /src/log.txt
 /.ccls-cache/
+/lib/xdg-shell-protocol.c
+/lib/xdg-shell-protocol.h

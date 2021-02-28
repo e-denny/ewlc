@@ -7,6 +7,7 @@
 #include "notify.h"
 #include "Fwlr.h"
 #include "server.h"
+#include <string.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_input_device.h>
@@ -67,7 +68,7 @@ emacs_value Fwlr_keyboard_get_modifiers(emacs_env *env, ptrdiff_t nargs,
     if ((mods & WLR_MODIFIER_ALT) == WLR_MODIFIER_ALT) {
         mods_str[0] = 'M';
     } else {
-        mods_str[0] = ' ';
+        mods_str[0] = '\0';
     }
     return env->make_string(env, mods_str, 1);
 }

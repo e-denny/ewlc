@@ -2,30 +2,13 @@
 #define __SERVER_H_
 
 #define _POSIX_C_SOURCE 200809L
-#include "server.h"
-#include "util.h"
 #include <emacs-module.h>
-#include <getopt.h>
-#include <linux/input-event-codes.h>
 #include <wayland-client.h>
 #include <wayland-server-core.h>
-#include <wlr/backend.h>
 #include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_compositor.h>
-#include <wlr/types/wlr_cursor.h>
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_input_device.h>.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_pointer.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_xcursor_manager.h>
-#include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/util/log.h>
-#include <xkbcommon/xkbcommon.h>
-
-#include <X11/Xlib.h>
-#include <wlr/xwayland.h>
 
 enum {
     NetWMWindowTypeDialog,
@@ -68,7 +51,7 @@ struct ewlc_output {
 
 struct ewlc_client {
     struct ewlc_server *server;
-    // does this need to be here ?
+    // TODO: does this need to be here ?
     struct ewlc_output *output;
     struct wl_listener xwayland_surface_request_activate_listener;
     struct wl_listener surface_commit_listener;
@@ -92,7 +75,7 @@ struct ewlc_decoration {
 };
 
 struct ewlc_keyboard {
-    // does this need to be here ?
+    // TODO: does this need to be here ?
     struct wlr_input_device *device;
     struct ewlc_server *server;
 

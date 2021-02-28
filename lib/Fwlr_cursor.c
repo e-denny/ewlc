@@ -31,6 +31,7 @@ emacs_value Fwlr_cursor_set_surface(emacs_env *env, ptrdiff_t nargs,
         wlr_cursor_set_surface(cursor, event->surface, event->hotspot_x, event->hotspot_y);
     return Qt;
 }
+
 emacs_value Fwlr_cursor_warp_closest(emacs_env *env, ptrdiff_t nargs,
                                       emacs_value args[], void *data)
 {
@@ -126,7 +127,7 @@ void init_wlr_cursor(emacs_env *env)
     bind_function(env, "wlr-cursor-attach-output-layout", func);
 
     func = env->make_function(env, 2, 2, Fwlr_cursor_attach_input_device, "", NULL);
-    bind_function(env, "wlr-cursor-attach-output-layout", func);
+    bind_function(env, "wlr-cursor-attach-input-device", func);
 
     func = env->make_function(env, 1, 1, Fwlr_cursor_destroy, "", NULL);
     bind_function(env, "wlr-cursor-destroy", func);

@@ -2,15 +2,8 @@
  p See LICENSE file for copyright and license details.
  */
 #define _POSIX_C_SOURCE 200809L
-#include "util.h"
+#include "notify.h"
 #include "server.h"
-#include "client.h"
-#include "output.h"
-#include "pointer.h"
-#include "keyboard.h"
-#include "module.h"
-#include <emacs-module.h>
-#include <getopt.h>
 #include <linux/input-event-codes.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -52,15 +45,17 @@
 #include <wlr/xwayland.h>
 #endif
 
-struct event_node *create_event(struct wl_listener *listener, void *data, int type)
+struct event_node *create_event(void *event_container, void *event_data, char* event_type)
 {
     struct event_node *new_node = (struct event_node *)malloc(sizeof(struct event_node));
     if (new_node == NULL)
         ERROR("Error creating a new node.\n");
 
-    new_node->listener = listener;
-    new_node->data = data;
-    new_node->type = type;
+    new_node->event_container = event_container;
+    new_node->event_data = event_data;
+    new_node->event_type = malloc(strlen(event_type) + 1);
+    if (event_type != NULL)
+        strcpy(event_data, new_node->event_type);
     new_node->next = NULL;
     return new_node;
 }
@@ -97,6 +92,8 @@ struct event_node *remove_event(struct event_node *list)
     /* is this the last node in the list */
     if (front == list)
         list = NULL;
+
+    free(front->event_type);
     free(front);
     return list;
 }
@@ -108,7 +105,7 @@ void xwayland_ready_notify(struct wl_listener *listener, void *data)
     struct ewlc_server *s = wl_container_of(listener, s, xwayland_ready_listener);
     struct event_node *e_node;
 
-    e_node = create_event(listener, data, "ewlc-xwayland-ready");
+    e_node = create_event(s, data, "ewlc-xwayland-ready");
     s->event_list = add_event(s->event_list, e_node);
 }
 
@@ -116,34 +113,32 @@ void xwayland_ready_notify(struct wl_listener *listener, void *data)
 
 void deco_request_mode_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_decoration *d;
+    struct ewlc_decoration *d = wl_container_of(listener, d, deco_request_mode_listener);
     struct ewlc_server *s;
     struct event_node *e_node;
 
-    d = wl_container_of(listener, d, deco_request_mode_listener);
     s = d->server;
-    e_node = create_event(listener, data, "ewlc-deco-request-mode");
+    e_node = create_event(d, data, "ewlc-deco-request-mode");
     s->event_list = add_event(s->event_list, e_node);
 }
 
 void deco_destroy_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_decoration *d;
+    struct ewlc_decoration *d = wl_container_of(listener, d, deco_destroy_listener);
     struct ewlc_server *s;
     struct event_node *e_node;
 
-    d = wl_container_of(listener, d, deco_destroy_listener);
     s = d->server;
-    e_node = create_event(listener, data, "ewlc_deco_destroy");
+    e_node = create_event(d, data, "ewlc_deco_destroy");
     s->event_list = add_event(s->event_list, e_node);
 }
 
 void xdeco_mgr_new_toplevel_decoration_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s,
+                                            xdeco_mgr_new_top_level_decoration_listener);
     struct event_node *e_node;
 
-    s = wl_container_of(listener, s, xdeco_mgr_new_top_level_decoration_listener);
     e_node = create_event(listener, data, "ewlc_new_toplevel_decoration");
     s->event_list = add_event(s->event_list, e_node);
 }
@@ -156,18 +151,16 @@ void seat_request_set_primary_selection_notify(struct wl_listener *listener,
     /* This event is raised by the seat when a client wants to set the
      * selection, usually when the user copies something. */
 
-    struct ewlc_server *s;
-    struct event_node *e;
+    struct ewlc_server *s = wl_container_of(listener, s,
+                                            seat_request_set_primary_selection_listener);
     struct wlr_seat_request_set_primary_selection_event *event = data;
-    struct wlr_seat_request_set_primary_selection_event *event_cpy =
-        calloc(1, sizeof(*event_cpy));
-
-    s = wl_container_of(listener, s, seat_request_set_primary_selection_listener);
+    struct wlr_seat_request_set_primary_selection_event *event_cpy = calloc(1, sizeof(*event_cpy));
+    struct event_node *e;
 
     event_cpy->serial = event->serial;
     event_cpy->source = event->source;
 
-    e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_PRIMARY_SELECTION);
+    e = create_event(s, event_cpy, "ewlc_seat_request_set_primary_selection");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -176,16 +169,15 @@ void seat_request_set_selection_notify(struct wl_listener *listener, void *data)
     /* This event is raised by the seat when a client wants to set the
      * selection, usually when the user copies something. */
 
-    struct ewlc_server *s;
-    struct event_node *e_node;
+    struct ewlc_server *s = wl_container_of(listener, s, seat_request_set_selection_listener);
     struct wlr_seat_request_set_selection_event *event = data;
     struct wlr_seat_request_set_selection_event *event_cpy = calloc(1, sizeof(*event_cpy));
+    struct event_node *e_node;
 
     event_cpy->serial = event->serial;
     event_cpy->source = event->source;
 
-    s = wl_container_of(listener, s, seat_request_set_selection_listener);
-    e_node = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_SELECTION);
+    e_node = create_event(s, event_cpy, "ewlc_seat_request_set_selection");
     s->event_list = add_event(s->event_list, e_node);
 }
 
@@ -195,7 +187,7 @@ void cursor_axis_notify(struct wl_listener *listener, void *data)
 {
     /* This event is forwarded by the cursor when a pointer emits an axis event,
      * for example when you move the scroll wheel. */
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, cursor_axis_listener);
     struct event_node *e;
     struct wlr_event_pointer_axis *event = data;
     struct wlr_event_pointer_axis *event_cpy = calloc(1, sizeof(*event_cpy));;
@@ -206,14 +198,13 @@ void cursor_axis_notify(struct wl_listener *listener, void *data)
     event_cpy->delta_discrete = event->delta_discrete;
     event_cpy->source = event->source;
 
-    s = wl_container_of(listener, s, cursor_axis_listener);
-    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_AXIS);
+    e = create_event(s, event_cpy, "ewlc_cursor_axis");
     s->event_list = add_event(s->event_list, e);
 }
 
 void cursor_button_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, cursor_button_listener);
     struct event_node *e;
     struct wlr_event_pointer_button *event = data;
     struct wlr_event_pointer_button *event_cpy = calloc(1, sizeof(*event_cpy));
@@ -222,18 +213,16 @@ void cursor_button_notify(struct wl_listener *listener, void *data)
     event_cpy->button = event->button;
     event_cpy->state = event->state;
 
-    s = wl_container_of(listener, s, cursor_button_listener);
-    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_BUTTON);
+    e = create_event(s, event_cpy, "ewlc_cursor_button");
     s->event_list = add_event(s->event_list, e);
 }
 
 void cursor_frame_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, cursor_frame_listener);
     struct event_node *e;
 
-    s = wl_container_of(listener, s, cursor_frame_listener);
-    e = create_event(listener, data, EWLC_CURSOR_FRAME);
+    e = create_event(s, data, "ewlc_cursor_frame");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -246,7 +235,7 @@ void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
      * so we have to warp the mouse there. There is also some hardware which
      * emits these events. */
 
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, cursor_motion_absolute_listener);
     struct event_node *e;
     struct wlr_event_pointer_motion_absolute *event = data;
     struct wlr_event_pointer_motion_absolute *event_cpy = calloc(1, sizeof(*event_cpy));
@@ -256,8 +245,7 @@ void cursor_motion_absolute_notify(struct wl_listener *listener, void *data)
     event_cpy->x = event->x;
     event_cpy->y = event->y;
 
-    s = wl_container_of(listener, s, cursor_motion_absolute_listener);
-    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_MOTION_ABSOLUTE);
+    e = create_event(s, event_cpy, "ewlc_cursor_motion_absolute");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -266,7 +254,7 @@ void cursor_motion_notify(struct wl_listener *listener, void *data)
     /* This event is forwarded by the cursor when a pointer emits a _relative_
      * pointer motion event (i.e. a delta) */
 
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, cursor_motion_listener);
     struct event_node *e;
     struct wlr_event_pointer_motion *event = data;
     struct wlr_event_pointer_motion *event_cpy = calloc(1, sizeof(*event_cpy));
@@ -276,8 +264,7 @@ void cursor_motion_notify(struct wl_listener *listener, void *data)
     event_cpy->delta_x = event->delta_x;
     event_cpy->delta_y = event->delta_y;
 
-    s = wl_container_of(listener, s, cursor_motion_listener);
-    e = create_event(listener, (void *)event_cpy, EWLC_CURSOR_MOTION);
+    e = create_event(s, event_cpy, "ewlc_cursor_motion");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -285,7 +272,7 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised by the seat when a client provides a cursor image */
 
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, seat_request_set_cursor_listener);
     struct event_node *e;
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
     struct wlr_seat_pointer_request_set_cursor_event *event_cpy
@@ -296,8 +283,7 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
     event_cpy->hotspot_y = event->hotspot_y;
     event_cpy->seat_client = event->seat_client;
 
-    s = wl_container_of(listener, s, seat_request_set_cursor_listener);
-    e = create_event(listener, (void *)event_cpy, EWLC_SEAT_REQUEST_SET_CURSOR);
+    e = create_event(s, event_cpy, "ewlc_seat_request_set_cursor");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -305,13 +291,12 @@ void seat_request_set_cursor_notify(struct wl_listener *listener, void *data)
 
 void xdg_surface_commit_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_client *c;
+    struct ewlc_client *c = wl_container_of(listener, c, surface_commit_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    c = wl_container_of(listener, c, surface_commit_listener);
     s = c->server;
-    e = create_event(listener, data, EWLC_XDG_SURFACE_COMMIT);
+    e = create_event(c, data, "ewlc_xdg_surface_commit");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -319,50 +304,46 @@ void xdg_shell_new_surface_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised when wlr_xdg_shell receives a new xdg surface from a
      * client, either a toplevel (application window) or popup. */
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, xdg_shell_new_surface_listener);
     struct event_node *e;
 
-    s = wl_container_of(listener, s, xdg_shell_new_surface_listener);
-    e = create_event(listener, data, EWLC_XDG_SHELL_NEW_SURFACE);
+    e = create_event(s, data, "ewlc_xdg_shell_new_surface");
     s->event_list = add_event(s->event_list, e);
 }
 
 void surface_destroy_notify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is destroyed and should never be shown again. */
-    struct ewlc_client *c;
+    struct ewlc_client *c = wl_container_of(listener, c, surface_destroy_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    c = wl_container_of(listener, c, surface_destroy_listener);
     s = c->server;
-    e = create_event(listener, data, EWLC_SURFACE_DESTROY);
+    e = create_event(c, data, "ewlc_surface_destroy");
     s->event_list = add_event(s->event_list, e);
 }
 
 void surface_map_notify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is mapped, or ready to display on-screen. */
-    struct ewlc_client *c;
+    struct ewlc_client *c = wl_container_of(listener, c, surface_map_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    c = wl_container_of(listener, c, surface_map_listener);
     s = c->server;
-    e = create_event(listener, data, EWLC_SURFACE_MAP);
+    e = create_event(c, data, "ewlc_surface_map");
     s->event_list = add_event(s->event_list, e);
 }
 
 void surface_unmap_notify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is unmapped, and should no longer be shown. */
-    struct ewlc_client *c;
+    struct ewlc_client *c = wl_container_of(listener, c, surface_unmap_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    c = wl_container_of(listener, c, surface_unmap_listener);
     s = c->server;
-    e = create_event(listener, data, EWLC_SURFACE_UNMAP);
+    e = create_event(c, data, "ewlc_surface_unmap");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -370,23 +351,21 @@ void surface_unmap_notify(struct wl_listener *listener, void *data)
 
 void xwayland_surface_request_activate_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_client *c;
+    struct ewlc_client *c = wl_container_of(listener, c, xwayland_surface_request_activate_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    c = wl_container_of(listener, c, xwayland_surface_request_activate_listener);
     s = c->server;
-    e = create_event(listener, data, EWLC_X_SURFACE_REQUEST_ACTIVATE);
+    e = create_event(c, data, "ewlc_x_surface_request_activate");
     s->event_list = add_event(s->event_list, e);
 }
 
 void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, new_xwayland_surface_listener);
     struct event_node *e;
 
-    s = wl_container_of(listener, s, new_xwayland_surface_listener);
-    e = create_event(listener, data, EWLC_NEW_X_SURFACE);
+    e = create_event(s, data, "ewlc_new_x_surface");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -395,23 +374,21 @@ void new_xwayland_surface_notify(struct wl_listener *listener, void *data)
 void keyboard_destroy_notify(struct wl_listener *listener, void *data)
 {
     /* struct wlr_input_device *device = data; */
-    struct ewlc_keyboard *kb;
+    struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_destroy_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    kb = wl_container_of(listener, kb, keyboard_destroy_listener);
     s = kb->server;
-    e = create_event(listener, data, EWLC_KEYBOARD_DESTROY);
+    e = create_event(kb, data, "ewlc_keyboard_destroy");
     s->event_list = add_event(s->event_list, e);
 }
 
 void backend_new_input_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, backend_new_input_listener);
     struct event_node *e;
 
-    s = wl_container_of(listener, s, backend_new_input_listener);
-    e = create_event(listener, data, EWLC_BACKEND_NEW_INPUT);
+    e = create_event(s, data, "ewlc_backend_new_input");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -460,7 +437,7 @@ void backend_new_input_notify(struct wl_listener *listener, void *data)
 
 void keyboard_key_notify(struct wl_listener *listener, void *data)
 {
-    struct ewlc_keyboard *kb;
+    struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_key_listener);
     struct ewlc_server *s;
     struct event_node *e_node;
     struct wlr_event_keyboard_key *event = data;
@@ -470,9 +447,8 @@ void keyboard_key_notify(struct wl_listener *listener, void *data)
     event_cpy->state = event->state;
     event_cpy->time_msec = event->time_msec;
 
-    kb = wl_container_of(listener, kb, keyboard_key_listener);
     s = kb->server;
-    e_node = create_event(listener, (void *)event_cpy, EWLC_KEYBOARD_KEY);
+    e_node = create_event(kb, event_cpy, "ewlc_keyboard_key");
     s->event_list = add_event(s->event_list, e_node);
 }
 
@@ -480,13 +456,12 @@ void keyboard_modifiers_notify(struct wl_listener *listener, void *data)
 {
     /* This event is raised when a modifier key, such as shift or alt, is
      * pressed. We simply communicate this to the client. */
-    struct ewlc_keyboard *kb;
+    struct ewlc_keyboard *kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    kb = wl_container_of(listener, kb, keyboard_modifiers_listener);
     s = kb->server;
-    e = create_event(listener, data, EWLC_KEYBOARD_MODIFIERS);
+    e = create_event(kb, data, "ewlc_keyboard_modifiers");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -497,23 +472,21 @@ void backend_new_output_notify(struct wl_listener *listener, void *data)
     /* This event is raised by the backend when a new output (aka a display or
      * output) becomes available. */
 
-    struct ewlc_server *s;
+    struct ewlc_server *s = wl_container_of(listener, s, backend_new_output_listener);
     struct event_node *e;
 
-    s = wl_container_of(listener, s, backend_new_output_listener);
-    e = create_event(listener, data, "ewlc-backend-new-output");
+    e = create_event(s, data, "ewlc-backend-new-output");
     s->event_list = add_event(s->event_list, e);
 }
 
 void output_destroy_notify(struct wl_listener *listener, void *data)
 {
+    struct ewlc_output *o = wl_container_of(listener, o, output_destroy_listener);
     struct ewlc_server *s;
-    struct ewlc_output *o;
     struct event_node *e;
 
-    o = wl_container_of(listener, o, output_destroy_listener);
     s = o->server;
-    e = create_event(listener, data, "ewlc-output-destroy");
+    e = create_event(o, data, "ewlc-output-destroy");
     s->event_list = add_event(s->event_list, e);
 }
 
@@ -522,12 +495,11 @@ void output_frame_notify(struct wl_listener *listener, void *data)
     /* This function is called every time an output is ready to display a frame,
      * generally at the output's refresh rate (e.g. 60Hz). */
 
-    struct ewlc_output *o;
+    struct ewlc_output *o = wl_container_of(listener, o, output_frame_listener);
     struct ewlc_server *s;
     struct event_node *e;
 
-    o = wl_container_of(listener, o, output_frame_listener);
     s = o->server;
-    e = create_event(listener, data, "ewlc-output-frame");
+    e = create_event(o , data, "ewlc-output-frame");
     s->event_list = add_event(s->event_list, e);
 }

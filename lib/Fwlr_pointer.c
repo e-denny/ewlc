@@ -34,8 +34,8 @@ emacs_value Fwlr_event_pointer_motion_absolute_time_msec(emacs_env *env, ptrdiff
 }
 
 
-emacs_value Fwlr_event_pointer_get_button(emacs_env *env, ptrdiff_t nargs,
-                                          emacs_value args[], void *data)
+emacs_value Fwlr_event_pointer_button_get_button(emacs_env *env, ptrdiff_t nargs,
+                                                 emacs_value args[], void *data)
 {
     struct wlr_event_pointer_button *event = env->get_user_ptr(env, args[0]);
     // TODO: is this right?
@@ -58,8 +58,8 @@ void init_wlr_pointer(emacs_env *env)
     func = env->make_function(env, 1, 1, Fwlr_event_pointer_motion_time_msec, "", NULL);
     bind_function(env, "wlr-event-pointer-motion-time-msec", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_event_pointer_get_button, "", NULL);
-    bind_function(env, "wlr-event-pointer-motion-time-msec", func);
+    func = env->make_function(env, 1, 1, Fwlr_event_pointer_button_get_button, "", NULL);
+    bind_function(env, "wlr-event-pointer-button-get-button", func);
 
     func = env->make_function(env, 1, 1, Fwlr_event_pointer_motion_absolute_time_msec, "", NULL);
     bind_function(env, "wlr-event-pointer-motion-absolute-time-msec", func);

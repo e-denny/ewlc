@@ -22,7 +22,7 @@ emacs_value Fwlr_xcursor_manager_set_cursor_image(emacs_env *env, ptrdiff_t narg
     env->copy_string_contents(env, args[1], image_text, &len);
 
     wlr_xcursor_manager_set_cursor_image(cursor_mgr, image_text, cursor);
-    // FIXME: free image_text?
+    free(image_text);
 }
 
 emacs_value Fwlr_xcursor_manager_create(emacs_env *env, ptrdiff_t nargs,

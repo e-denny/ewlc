@@ -1,27 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
 #include "server.h"
-#include <signal.h>
 #include "module.h"
 #include "Fwlr.h"
 #include "notify.h"
-#include <emacs-module.h>
-#include <wayland-client.h>
-#include <wayland-server-core.h>
-#include <wlr/backend.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
-#include <wlr/types/wlr_xdg_shell.h>
-#include <wlr/types/wlr_cursor.h>
-#include <wlr/types/wlr_seat.h>
-#include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_keyboard.h>
-#include <xkbcommon/xkbcommon.h>
-#include <X11/Xlib.h>
-#include <wlr/xwayland.h>
-
-#include "util.h"
+#include <signal.h>
 #include <linux/input-event-codes.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -30,12 +12,30 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <emacs-module.h>
+#include <wayland-client.h>
+#include <wayland-server-core.h>
+#include <wlr/backend.h>
+#include <wlr/types/wlr_surface.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_seat.h>
+#include <wlr/render/wlr_renderer.h>
+#include <wlr/types/wlr_matrix.h>
+#include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_input_device.h>
+#include <wlr/types/wlr_keyboard.h>
+#include <xkbcommon/xkbcommon.h>
+#include <X11/Xlib.h>
+#include <wlr/xwayland.h>
+
 
 // TODO: need a finalizer to free pointer
-
 emacs_value Fewlc_make_deco_ptr(emacs_env *env, ptrdiff_t nargs,
                                 emacs_value args[], void *data)
-e
+{
     struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[0]);
     struct ewlc_server *s = env->get_user_ptr(env, args[1]);
     struct ewlc_decoration *d = wlr_deco->data = calloc(1, sizeof(*d));
@@ -129,7 +129,7 @@ emacs_value Fewlc_set_atoms(emacs_env *env, ptrdiff_t nargs,
 void sigchld(int unused)
 {
     if (signal(SIGCHLD, sigchld) == SIG_ERR)
-        EERROR("can't install SIGCHLD handler");
+        ERROR("can't install SIGCHLD handler");
     while (0 < waitpid(-1, NULL, WNOHANG));
 }
 
@@ -259,9 +259,9 @@ emacs_value Fewlc_get_event(emacs_env *env, ptrdiff_t nargs,
                             emacs_value args[], void *data)
 {
     struct ewlc_server *s = env->get_user_ptr(env, args[0]);
-    struct wl_listener *listener = s->event_list->listener;
-    void *event_data = s->event_list->data;
-    char *event_type = s->event_list->type;
+    struct wl_listener *listener = s->event_list->event_container;
+    void *event_data = s->event_list->event_data;
+    char *event_type = s->event_list->event_type;
     emacs_value ret[2];
     ret[0] = env->make_user_ptr(env, NULL, event_data);
     ret[1] = env->intern(env, event_type);
@@ -273,7 +273,7 @@ emacs_value Fewlc_remove_event(emacs_env *env, ptrdiff_t nargs,
 {
     struct ewlc_server *s = env->get_user_ptr(env, args[0]);
 
-    // FIXME: free the event here rather in lisp code
+    // TODO: free the event here rather in lisp code - is this correct now?
     s->event_list = remove_event(s->event_list);
     return Qt;
 }
@@ -334,6 +334,7 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
     struct wlr_output *output = rdata->output;
     struct wlr_output_layout *output_layout = rdata->output_layout;
     struct wlr_renderer *renderer = rdata->renderer;
+    struct wlr_surface_state state = surface->current;
     double ox = 0, oy = 0;
     struct wlr_box obox;
     float matrix[9];
@@ -356,11 +357,11 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
 
     /* We also have to apply the scale factor for HiDPI outputs. This is only
      * part of the puzzle, ewlc does not fully support HiDPI. */
-    obox.x = ox + rdata->x + sx;
-    obox.y = oy + rdata->y + sy;
-    obox.width = surface->current.width;
-    obox.height = surface->current.height;
-    scale_box(&obox, output->scale);
+
+    obox.x = (ox + rdata->x + sx) * output->scale;
+    obox.y = (oy + rdata->y + sy) * output->scale;
+    obox.width = state.width * output->scale;
+    obox.height = state.height * output->scale;
 
     /*
      * Those familiar with OpenGL are also familiar with the role of matrices
@@ -454,8 +455,8 @@ emacs_value Fewlc_make_keyboard_ptr(emacs_env *env, ptrdiff_t nargs,
     return env->make_user_ptr(env, NULL, kb);
 }
 
-emacs_value Fewlc_keyboard_set_event_listeners(emacs_env *env, ptrdiff_t nargs,
-                                               emacs_value args[], void *data)
+emacs_value Fewlc_keyboard_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value args[], void *data)
 {
     struct ewlc_keyboard *kb = env->get_user_ptr(env, args[0]);
     struct wlr_input_device *device = env->get_user_ptr(env, args[1]);
@@ -482,8 +483,8 @@ emacs_value Fewlc_compare_outputs(emacs_env *env, ptrdiff_t nargs,
     return Qnil;
 }
 
-emacs_value Fewlc_output_set_event_listeners(emacs_env *env, ptrdiff_t nargs,
-                                             emacs_value args[], void *data)
+emacs_value Fewlc_output_set_listeners(emacs_env *env, ptrdiff_t nargs,
+                                       emacs_value args[], void *data)
 {
     struct ewlc_output *o = env->get_user_ptr(env, args[0]);
     struct wlr_output *wlr_output = env->get_user_ptr(env, args[1]);
@@ -509,42 +510,40 @@ emacs_value Fewlc_make_output_ptr(emacs_env *env, ptrdiff_t nargs,
 static emacs_value Fewlc_chvt(emacs_env *env, ptrdiff_t nargs,
                               emacs_value args[], void *data)
 {
-    struct ewlc_server *server = env->get_user_ptr(env, args[0]);
+    struct wlr_backend *backend = env->get_user_ptr(env, args[0]);
     int nbr = env->extract_integer(env, args[1]);
-
-    // FIXME: backend no longer part of server
-    wlr_session_change_vt(wlr_backend_get_session(server->backend), nbr);
+    wlr_session_change_vt(wlr_backend_get_session(backend), nbr);
     return Qt;
-}
-
-void ewlc_spawn(char *cmd, char *args[])
-{
-    if (fork() == 0) {
-        setsid();
-        execvp(cmd, args);
-        EERROR("ewlc: execvp %s failed", cmd);
-    }
 }
 
 static emacs_value Fewlc_spawn(emacs_env *env, ptrdiff_t nargs,
                                emacs_value args[], void *data)
 {
     ptrdiff_t len;
-    char *cmd, **cmd_args;
+    char *cmd;
+    // TODO: extend to more arguments
+    char *cmd_args[3];
 
     len = string_bytes(env, args[0]);
-    cmd = malloc(sizeof(char) * len);
+    cmd = cmd_args[0] = malloc(sizeof(char) * len);
     env->copy_string_contents(env, args[0], cmd, &len);
+    env->copy_string_contents(env, args[0], cmd_args[0], &len);
+
     if (nargs > 1) {
         len = string_bytes(env, args[1]);
-        cmd_args = malloc(sizeof(char*));
         cmd_args[1] = malloc(sizeof(char) * len);
-        env->copy_string_contents(env, args[1], cmd_args[0], &len);
+        env->copy_string_contents(env, args[1], cmd_args[1], &len);
     }
-    ewlc_spawn(cmd, cmd_args);
+    cmd_args[2] = NULL;
+
+    if (fork() == 0) {
+        setsid();
+        execvp(cmd, cmd_args);
+        ERROR("ewlc: execvp %s failed", cmd);
+    }
     free(cmd);
-    // FIXME: this is a mess, is wrong, and leaks.
-    if (nargs > 1) free(cmd_args);
+    free(cmd_args[0]);
+    if (nargs > 1) free(cmd_args[1]);
     return Qt;
 }
 
@@ -591,6 +590,9 @@ void init_ewlc(emacs_env *env)
     func = env->make_function(env, 2, 2, Fewlc_backend_set_listeners, "", NULL);
     bind_function(env, "ewlc-backend-set-listeners", func);
 
+    func = env->make_function(env, 2, 2, Fewlc_output_set_listeners, "", NULL);
+    bind_function(env, "ewlc-output-set-listeners", func);
+
     func = env->make_function(env, 2, 2, Fewlc_xdg_shell_set_listeners, "", NULL);
     bind_function(env, "ewlc-xdg-shell-set-listeners", func);
 
@@ -612,8 +614,8 @@ void init_ewlc(emacs_env *env)
     func = env->make_function(env, 2, 2, Fewlc_set_xwayland_surface_client_listeners, "", NULL);
     bind_function(env, "ewlc-set-xwayland-surface-client-listeners", func);
 
-    func = env->make_function(env, 2, 2, Fewlc_keyboard_set_event_listeners, "", NULL);
-    bind_function(env, "ewlc-keyboard-set-event-listeners", func);
+    func = env->make_function(env, 2, 2, Fewlc_keyboard_set_listeners, "", NULL);
+    bind_function(env, "ewlc-keyboard-set-listeners", func);
 
     func = env->make_function(env, 2, 2, Fewlc_remove_client_listeners, "", NULL);
     bind_function(env, "ewlc-remove-client-listeners", func);
@@ -665,6 +667,6 @@ void init_ewlc(emacs_env *env)
     func = env->make_function(env, 2, 2, Fewlc_chvt, "", NULL);
     bind_function(env, "ewlc-chvt", func);
 
-    func = env->make_function(env, 1, 1, Fewlc_spawn, "", NULL);
+    func = env->make_function(env, 1, 2, Fewlc_spawn, "", NULL);
     bind_function(env, "ewlc-spawn", func);
 }

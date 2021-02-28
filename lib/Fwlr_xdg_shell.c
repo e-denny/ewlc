@@ -70,14 +70,6 @@ emacs_value Fwlr_xdg_surface_surface_at(emacs_env *env, ptrdiff_t nargs,
     return list(env, ret, 3);
 }
 
-emacs_value Fwlr_xdg_surface_get_wlr_surface(emacs_env *env, ptrdiff_t nargs,
-                                             emacs_value args[], void *data)
-{
-    struct wlr_xdg_surface *xdg_surface = env->get_user_ptr(env, args[0]);
-    struct wlr_surface *wlr_surface = xdg_surface->surface;
-    return env->make_user_ptr(env, NULL, wlr_surface);
-}
-
 emacs_value Fwlr_xdg_surface_get_app_id(emacs_env *env, ptrdiff_t nargs,
                                         emacs_value args[], void *data)
 {
@@ -124,7 +116,7 @@ emacs_value Fwlr_xdg_surface_get_geometry(emacs_env *env, ptrdiff_t nargs,
 {
     struct wlr_xdg_surface *surface = env->get_user_ptr(env, args[0]);
     struct wlr_box *geom = env->get_user_ptr(env, args[1]);
-    wlr_xdg_surface_get_geometry(c->surface.xdg, geom);
+    wlr_xdg_surface_get_geometry(surface, geom);
     return env->make_user_ptr(env, NULL, geom);
 }
 
@@ -132,7 +124,8 @@ emacs_value Fwlr_xdg_surface_get_wlr_surface(emacs_env *env, ptrdiff_t nargs,
                                              emacs_value args[], void *data)
 {
     struct wlr_xdg_surface *xdg_surface = env->get_user_ptr(env, args[0]);
-    return env->make_user_ptr(env, NULL, xdg_surface->surface);
+    struct wlr_surface *wlr_surface = xdg_surface->surface;
+    return env->make_user_ptr(env, NULL, wlr_surface);
 }
 
 void init_wlr_xdg_shell(emacs_env *env)
@@ -156,11 +149,8 @@ void init_wlr_xdg_shell(emacs_env *env)
     func = env->make_function(env, 3, 3, Fwlr_xdg_surface_surface_at, "", NULL);
     bind_function(env, "wlr-xdg-surface-surface-at", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_xdg_surface_get_wlr_surface, "", NULL);
-    bind_function(env, "wlr-xdg-surface-get-wlr-surface", func);
-
     func = env->make_function(env, 1, 1, Fwlr_xdg_surface_get_app_id, "", NULL);
-    bind_function(env, "wlr-xdg-surface-get_app-id", func);
+    bind_function(env, "wlr-xdg-surface-get-app-id", func);
 
     func = env->make_function(env, 1, 1, Fwlr_xdg_surface_get_title, "", NULL);
     bind_function(env, "wlr-xdg-surface-get-title", func);
@@ -171,12 +161,12 @@ void init_wlr_xdg_shell(emacs_env *env)
     func = env->make_function(env, 1, 1, Fwlr_xdg_surface_role_toplevel, "", NULL);
     bind_function(env, "wlr-xdg-surface-role-toplevel", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_xdg_surface_toplevel_set_tiled, "", NULL);
-    bind_function(env, "wlr-xdg-surface-toplevel-set-tiled", func);
+    func = env->make_function(env, 1, 1, Fwlr_xdg_toplevel_set_tiled, "", NULL);
+    bind_function(env, "wlr-xdg-toplevel-set-tiled", func);
 
     func = env->make_function(env, 2, 2, Fwlr_xdg_surface_get_geometry, "", NULL);
     bind_function(env, "wlr-xdg-surface-get-geometry", func);
 
-    func = env->make_function(env, 2, 2, Fwlr_xdg_surface_get_wlr_surface, "", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_xdg_surface_get_wlr_surface, "", NULL);
     bind_function(env, "wlr-xdg-surface-get-wlr-surface", func);
 }

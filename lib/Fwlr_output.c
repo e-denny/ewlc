@@ -87,21 +87,21 @@ void init_wlr_output(emacs_env *env)
     func = env->make_function(env, 1, 1, Fwlr_output_preferred_mode, "", NULL);
     bind_function(env, "wlr-output-preferred-mode", func);
 
-    func = env->make_function(env, 2, 2, Fwlr_output_set_scale"", NULL);
+    func = env->make_function(env, 2, 2, Fwlr_output_set_scale, "", NULL);
     bind_function(env, "wlr-output-set-scale", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_output_set_transform"", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_output_set_transform, "", NULL);
     bind_function(env, "wlr-output-set-transform", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_output_enable"", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_output_enable, "", NULL);
     bind_function(env, "wlr-output-enable", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_output_attach_render"", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_output_attach_render, "", NULL);
     bind_function(env, "wlr-output-attach-render", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_output_commit"", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_output_commit, "", NULL);
     bind_function(env, "wlr-output-commit", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_output_render_software_cursors"", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_output_render_software_cursors, "", NULL);
     bind_function(env, "wlr-output-render-software-cursors", func);
 }
