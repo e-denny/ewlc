@@ -20,20 +20,19 @@
 ;;; Code:
 
 
-(defvar *log-buff* (generate-new-buffer "ewlc-log"))
+(defvar *log-file* "/home/edgar/Projects/ewlc/src/log-file.txt")
 
 (defun log-message (msg)
-  "Print MSG to log buffer."
-  (message "into: log-message")
-  (print msg *log-buff*))
+  "Add a given MSG string to the end of a file."
+  (append-to-file (concat msg "\n") nil *log-file*))
 
-(defun write-log-file ()
+(defun create-log-file ()
+  (interactive)
   "Write log buffer to file."
-  (let ((fn "/home/edgar/Projects/ewlc/src/log.txt"))
+  (let ((fn *log-file*))
     (when (file-exists-p fn)
       (delete-file fn))
-    (with-current-buffer *log-buff*
-      (write-region (point-min) (point-max) fn))))
+    (make-empty-file fn)))
 
 (provide 'ewlc-log)
 ;;; ewlc-log.el ends here

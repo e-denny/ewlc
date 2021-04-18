@@ -1,6 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
 #include "server.h"
-#include "util.h"
 #include "module.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -131,7 +130,7 @@ void init_wlr_xwayland(emacs_env *env)
     bind_function(env, "wlr-xwayland-set-seat", func);
 
     func = env->make_function(env, 1, 1, Fwlr_xwayland_display_name, "", NULL);
-    bind_function(env, "wlr-xwayland-set-seat", func);
+    bind_function(env, "wlr-xwayland-display-name", func);
 
     func = env->make_function(env, 1, 1, Fwlr_xwayland_destroy, "", NULL);
     bind_function(env, "wlr-xwayland-destroy", func);

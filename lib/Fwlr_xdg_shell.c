@@ -3,12 +3,16 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include "server.h"
-#include "util.h"
 #include "module.h"
 #include "Fwlr.h"
+#include <string.h>
+#include <stdlib.h>
 #include <wayland-server-core.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
+#include <wlr/util/edges.h>
 
 emacs_value Fwlr_xdg_shell_create(emacs_env *env, ptrdiff_t nargs,
                                   emacs_value args[], void *data)
@@ -34,6 +38,14 @@ emacs_value Fwlr_xdg_toplevel_set_activated(emacs_env *env, ptrdiff_t nargs,
     struct wlr_xdg_surface *surface = env->get_user_ptr(env, args[0]);
     int activated = env->extract_integer(env, args[1]);
     wlr_xdg_toplevel_set_activated(surface, activated);
+    return Qt;
+}
+
+emacs_value Fwlr_xdg_toplevel_decoration_v1_set_mode(emacs_env *env, ptrdiff_t nargs,
+                                                     emacs_value args[], void *data)
+{
+    struct wlr_xdg_toplevel_decoration_v1 *deco = env->get_user_ptr(env, args[0]);
+    wlr_xdg_toplevel_decoration_v1_set_mode(deco, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
     return Qt;
 }
 
@@ -115,7 +127,9 @@ emacs_value Fwlr_xdg_surface_get_geometry(emacs_env *env, ptrdiff_t nargs,
                                           emacs_value args[], void *data)
 {
     struct wlr_xdg_surface *surface = env->get_user_ptr(env, args[0]);
-    struct wlr_box *geom = env->get_user_ptr(env, args[1]);
+    // TODO: do I need to allocate a wlr_box here?
+    // FIXME: free this.
+    struct wlr_box *geom = calloc(1, sizeof(*geom));
     wlr_xdg_surface_get_geometry(surface, geom);
     return env->make_user_ptr(env, NULL, geom);
 }
@@ -139,6 +153,9 @@ void init_wlr_xdg_shell(emacs_env *env)
 
     func = env->make_function(env, 2, 2, Fwlr_xdg_toplevel_set_activated, "", NULL);
     bind_function(env, "wlr-xdg-toplevel-set-activated", func);
+
+    func = env->make_function(env, 1, 1, Fwlr_xdg_toplevel_decoration_v1_set_mode, "", NULL);
+    bind_function(env, "wlr-xdg-toplevel-decoration-v1-set-mode", func);
 
     func = env->make_function(env, 2, 2, Fwlr_xdg_surface_for_each_surface_render, "", NULL);
     bind_function(env, "wlr-xdg-surface-for-each-surface-render", func);
@@ -164,7 +181,7 @@ void init_wlr_xdg_shell(emacs_env *env)
     func = env->make_function(env, 1, 1, Fwlr_xdg_toplevel_set_tiled, "", NULL);
     bind_function(env, "wlr-xdg-toplevel-set-tiled", func);
 
-    func = env->make_function(env, 2, 2, Fwlr_xdg_surface_get_geometry, "", NULL);
+    func = env->make_function(env, 1, 1, Fwlr_xdg_surface_get_geometry, "", NULL);
     bind_function(env, "wlr-xdg-surface-get-geometry", func);
 
     func = env->make_function(env, 1, 1, Fwlr_xdg_surface_get_wlr_surface, "", NULL);

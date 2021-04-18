@@ -4,6 +4,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <emacs-module.h>
 #include "module.h"
+#include "notify.h"
 #include "Fwlr.h"
 #include <wayland-client.h>
 #include <wayland-server-core.h>
@@ -30,8 +31,8 @@ emacs_value Fwlr_output_layout_destroy(emacs_env *env, ptrdiff_t nargs,
 emacs_value Fwlr_output_layout_get_box(emacs_env *env, ptrdiff_t nargs,
                                        emacs_value args[], void *data)
 {
-    struct wlr_output *output = env->get_user_ptr(env, args[0]);
-    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[1]);
+    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
+    struct wlr_output *output = env->get_user_ptr(env, args[1]);
     struct wlr_box *box = wlr_output_layout_get_box(output_layout, output);
     return env->make_user_ptr(env, NULL, box);
 }
@@ -51,8 +52,9 @@ emacs_value Fwlr_output_layout_output_at(emacs_env *env, ptrdiff_t nargs,
     struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
     struct wlr_cursor *cursor = env->get_user_ptr(env, args[1]);
     struct wlr_output *o = wlr_output_layout_output_at(output_layout, cursor->x, cursor->y);
+    DEBUG("wlr_output o: '%p'", o);
     if (o) {
-        return env->make_user_ptr(env, NULL, o->data);
+        return env->make_user_ptr(env, NULL, o);
     }
     return Qnil;
 }
@@ -71,14 +73,17 @@ emacs_value Fwlr_output_layout_intersects(emacs_env *env, ptrdiff_t nargs,
 emacs_value Fwlr_output_layout_output_coords(emacs_env *env, ptrdiff_t nargs,
                                              emacs_value args[], void *data)
 {
-    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[0]);
-    struct wlr_output *output = env->get_user_ptr(env, args[1]);
-    double ox = env->extract_float(env, args[2]);
-    double oy = env->extract_float(env, args[3]);
+    struct wlr_output_layout *output_layout;
+    struct wlr_output *output;
+    double x, y;
     emacs_value coords[2];
-    wlr_output_layout_output_coords(output_layout, output, &ox, &oy);
-    coords[0] = env->make_float(env, ox);
-    coords[1] = env->make_float(env, oy);
+    output_layout = env->get_user_ptr(env, args[0]);
+    output = env->get_user_ptr(env, args[1]);
+    x = (double)env->extract_integer(env, args[2]);
+    y = (double)env->extract_integer(env, args[3]);
+    wlr_output_layout_output_coords(output_layout, output, &x, &y);
+    coords[0] = env->make_integer(env, (int)x);
+    coords[1] = env->make_integer(env, (int)y);
     return list(env, coords, 2);
 }
 
@@ -103,6 +108,6 @@ void init_wlr_output_layout(emacs_env *env)
     func = env->make_function(env, 3, 3, Fwlr_output_layout_intersects, "", NULL);
     bind_function(env, "wlr-output-layout-intersects", func);
 
-    func = env->make_function(env, 3, 3, Fwlr_output_layout_output_coords, "", NULL);
+    func = env->make_function(env, 4, 4, Fwlr_output_layout_output_coords, "", NULL);
     bind_function(env, "wlr-output-layout-output-coords", func);
 }

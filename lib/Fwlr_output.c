@@ -9,6 +9,16 @@
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
 
+emacs_value Fwlr_output_equal(emacs_env *env, ptrdiff_t nargs,
+                              emacs_value args[], void *data)
+{
+    struct wlr_output *output_1 = env->get_user_ptr(env, args[0]);
+    struct wlr_output *output_2 = env->get_user_ptr(env, args[1]);
+    if (output_1 == output_2)
+        return Qt;
+    return Qnil;
+}
+
 emacs_value Fwlr_output_set_mode(emacs_env *env, ptrdiff_t nargs,
                                  emacs_value args[], void *data)
 {
@@ -81,6 +91,10 @@ emacs_value Fwlr_output_render_software_cursors(emacs_env *env, ptrdiff_t nargs,
 void init_wlr_output(emacs_env *env)
 {
     emacs_value func;
+
+    func = env->make_function(env, 2, 2, Fwlr_output_equal, "", NULL);
+    bind_function(env, "wlr-output=", func);
+
     func = env->make_function(env, 2, 2, Fwlr_output_set_mode, "", NULL);
     bind_function(env, "wlr-output-set-mode", func);
 

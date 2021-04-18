@@ -23,6 +23,7 @@ emacs_value Fwlr_xcursor_manager_set_cursor_image(emacs_env *env, ptrdiff_t narg
 
     wlr_xcursor_manager_set_cursor_image(cursor_mgr, image_text, cursor);
     free(image_text);
+    return Qt;
 }
 
 emacs_value Fwlr_xcursor_manager_create(emacs_env *env, ptrdiff_t nargs,

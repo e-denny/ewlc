@@ -15,7 +15,7 @@ LDLIBS += $(foreach p,$(PKGS),$(shell pkg-config --libs $(p)))
 LDFLAGS = -shared
 TARGET_LIB = ewlc.so
 
-SRCS = server.c module.c output.c client.c keyboard.c pointer.c commands.c util.c xdg-shell-protocol.c
+SRCS = module.c notify.c Fwl.c Fwlr_misc.c Fwlr_backend.c Fwlr_box.c Fwlr_renderer.c Fwlr_pointer.c Fwlr_cursor.c Fwlr_input_device.c Fwlr_keyboard.c Fwlr_output.c Fwlr_output_layout.c Fwlr_seat.c Fwlr_surface.c Fwlr_xcursor_manager.c Fwlr_xdg_shell.c Fwlr_xwayland.c Fewlc.c xdg-shell-protocol.c
 OBJS = $(SRCS:.c=.o)
 
 .PHONY:all

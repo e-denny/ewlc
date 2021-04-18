@@ -17,7 +17,6 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_selection.h>
 
 emacs_value Fwlr_seat_create(emacs_env *env, ptrdiff_t nargs,
                              emacs_value args[], void *data)
@@ -25,11 +24,12 @@ emacs_value Fwlr_seat_create(emacs_env *env, ptrdiff_t nargs,
     struct wl_display *display = env->get_user_ptr(env, args[0]);
     char* name;
     ptrdiff_t len = 0;
+    struct wlr_seat *seat;
+
     env->copy_string_contents(env, args[1], NULL, &len);
     name = malloc(sizeof(char) * len);
     env->copy_string_contents(env, args[1], name, &len);
-
-    struct wlr_seat *seat = wlr_seat_create(display, name);
+    seat = wlr_seat_create(display, name);
     // TODO: free the seat, put in finalizer ?
     return env->make_user_ptr(env, NULL, seat);
 }

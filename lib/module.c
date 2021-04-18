@@ -1,8 +1,8 @@
 #include "module.h"
 #include "Fwlr.h"
 #include <emacs-module.h>
-#include <wayland-client.h>
-#include <wayland-server-core.h>
+//#include <wayland-client.h>
+//#include <wayland-server-core.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,7 +86,7 @@ int emacs_module_init(struct emacs_runtime *ert)
     init_wlr_backend(env);
     init_wlr_cursor(env);
     init_wlr_input_device(env);
-    init_wlr_keymap(env);
+    init_wlr_keyboard(env);
     init_wlr_output(env);
     init_wlr_output_layout(env);
     init_wlr_box(env);

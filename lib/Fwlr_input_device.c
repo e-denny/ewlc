@@ -39,7 +39,7 @@ void init_wlr_input_device(emacs_env *env)
 {
     emacs_value func;
     func = env->make_function(env, 1, 1, Fwlr_input_device_get_type, "", NULL);
-    bind_function(env, "wlr-get-device-type", func);
+    bind_function(env, "wlr-input-device-get-type", func);
 
     func = env->make_function(env, 1, 1, Fwlr_input_device_get_keyboard, "", NULL);
     bind_function(env, "wlr-input-device-get-keyboard", func);

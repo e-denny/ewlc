@@ -32,13 +32,42 @@
 #include <wlr/xwayland.h>
 
 
+emacs_value Fewlc_output_ptr_equal(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct ewlc_output *o1 = env->get_user_ptr(env, args[0]);
+    struct ewlc_output *o2 = env->get_user_ptr(env, args[1]);
+    if ( o1 == o2)
+        return Qt;
+    return Qnil;
+}
+
+emacs_value Fewlc_client_ptr_equal(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct ewlc_client *c1 = env->get_user_ptr(env, args[0]);
+    struct ewlc_client *c2 = env->get_user_ptr(env, args[1]);
+    if ( c1 == c2)
+        return Qt;
+    return Qnil;
+}
+
+emacs_value Fewlc_keyboard_ptr_equal(emacs_env *env, ptrdiff_t nargs,
+                                   emacs_value args[], void *data)
+{
+    struct ewlc_keyboard *kb1 = env->get_user_ptr(env, args[0]);
+    struct ewlc_keyboard *kb2 = env->get_user_ptr(env, args[1]);
+    if ( kb1 == kb2)
+        return Qt;
+    return Qnil;
+}
+
 // TODO: need a finalizer to free pointer
 emacs_value Fewlc_make_deco_ptr(emacs_env *env, ptrdiff_t nargs,
                                 emacs_value args[], void *data)
 {
-    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[0]);
-    struct ewlc_server *s = env->get_user_ptr(env, args[1]);
-    struct ewlc_decoration *d = wlr_deco->data = calloc(1, sizeof(*d));
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct ewlc_decoration *d = calloc(1, sizeof(*d));
     d->server = s;
     return env->make_user_ptr(env, NULL, d);
 }
@@ -152,6 +181,7 @@ emacs_value Fewlc_backend_set_listeners(emacs_env *env, ptrdiff_t nargs,
 
     wl_signal_add(&backend->events.new_output, &s->backend_new_output_listener);
     wl_signal_add(&backend->events.new_input, &s->backend_new_input_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_xdg_shell_set_listeners(emacs_env *env, ptrdiff_t nargs,
@@ -162,6 +192,7 @@ emacs_value Fewlc_xdg_shell_set_listeners(emacs_env *env, ptrdiff_t nargs,
 
     s->xdg_shell_new_surface_listener.notify = xdg_shell_new_surface_notify;
     wl_signal_add(&xdg_shell->events.new_surface, &s->xdg_shell_new_surface_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_xdg_deco_set_listeners(emacs_env *env, ptrdiff_t nargs,
@@ -174,6 +205,7 @@ emacs_value Fewlc_xdg_deco_set_listeners(emacs_env *env, ptrdiff_t nargs,
         xdeco_mgr_new_toplevel_decoration_notify;
     wl_signal_add(&xdg_deco->events.new_toplevel_decoration,
                   &s->xdeco_mgr_new_top_level_decoration_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_cursor_set_listeners(emacs_env *env, ptrdiff_t nargs,
@@ -194,6 +226,7 @@ emacs_value Fewlc_cursor_set_listeners(emacs_env *env, ptrdiff_t nargs,
     wl_signal_add(&cursor->events.frame, &s->cursor_frame_listener);
     wl_signal_add(&cursor->events.motion, &s->cursor_motion_listener);
     wl_signal_add(&cursor->events.motion_absolute, &s->cursor_motion_absolute_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_seat_set_listeners(emacs_env *env, ptrdiff_t nargs,
@@ -213,6 +246,7 @@ emacs_value Fewlc_seat_set_listeners(emacs_env *env, ptrdiff_t nargs,
                   &s->seat_request_set_selection_listener);
     wl_signal_add(&seat->events.request_set_primary_selection,
                   &s->seat_request_set_primary_selection_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_xwayland_set_listeners(emacs_env *env, ptrdiff_t nargs,
@@ -227,6 +261,7 @@ emacs_value Fewlc_xwayland_set_listeners(emacs_env *env, ptrdiff_t nargs,
 
     wl_signal_add(&xwayland->events.ready, &s->xwayland_ready_listener);
     wl_signal_add(&xwayland->events.new_surface, &s->new_xwayland_surface_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_make_server_ptr(emacs_env *env, ptrdiff_t nargs,
@@ -259,13 +294,17 @@ emacs_value Fewlc_get_event(emacs_env *env, ptrdiff_t nargs,
                             emacs_value args[], void *data)
 {
     struct ewlc_server *s = env->get_user_ptr(env, args[0]);
-    struct wl_listener *listener = s->event_list->event_container;
+    void *event_container = s->event_list->event_container;
     void *event_data = s->event_list->event_data;
     char *event_type = s->event_list->event_type;
-    emacs_value ret[2];
-    ret[0] = env->make_user_ptr(env, NULL, event_data);
-    ret[1] = env->intern(env, event_type);
-    return list(env, ret, 2);
+    // FIXME: can I return an array of emacs_value, or do I need a malloc?
+    emacs_value ret[3];
+    DEBUG("s->event_list->event_type: '%s'", s->event_list->event_type);
+    DEBUG("event_type: '%s'", event_type);
+    ret[0] = env->make_user_ptr(env, NULL, event_container);
+    ret[1] = env->make_user_ptr(env, NULL, event_data);
+    ret[2] = env->intern(env, event_type);
+    return list(env, ret, 3);
 }
 
 emacs_value Fewlc_remove_event(emacs_env *env, ptrdiff_t nargs,
@@ -282,9 +321,20 @@ emacs_value Fewlc_remove_event(emacs_env *env, ptrdiff_t nargs,
 emacs_value Fewlc_make_xdg_surface_client_ptr(emacs_env *env, ptrdiff_t nargs,
                                               emacs_value args[], void *data)
 {
-    struct wlr_xdg_surface *xdg_surface = env->get_user_ptr(env, args[0]);
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
     struct ewlc_client *c;
-    c = xdg_surface->data = calloc(1, sizeof(*c));
+    c = calloc(1, sizeof(*c));
+    c->server = s;
+    return env->make_user_ptr(env, NULL, c);
+}
+
+emacs_value Fewlc_make_xwayland_surface_client_ptr(emacs_env *env, ptrdiff_t nargs,
+                                                   emacs_value args[], void *data)
+{
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    struct ewlc_client *c;
+    c = calloc(1, sizeof(*c));
+    c->server = s;
     return env->make_user_ptr(env, NULL, c);
 }
 
@@ -391,29 +441,38 @@ void render_surface(struct wlr_surface *surface, int sx, int sy, void *data)
 emacs_value Fewlc_create_render_data(emacs_env *env, ptrdiff_t nargs,
                                      emacs_value args[], void *data)
 {
-    struct render_data *r_data = calloc(1, sizeof(*r_data));
-    struct wlr_output *output = env->get_user_ptr(env, args[0]);
-    struct wlr_output_layout *output_layout = env->get_user_ptr(env, args[1]);
-    struct wlr_renderer *renderer = env->get_user_ptr(env, args[2]);
-    int x = env->extract_integer(env, args[3]);
-    int y = env->extract_integer(env, args[4]);
-    struct timespec when = env->extract_time(env, args[5]);
+    struct render_data *r_data;
+    struct wlr_output *output;
+    struct wlr_output_layout *output_layout;
+    struct wlr_renderer *renderer;
+    int x;
+    int y;
+    struct timespec when;
+    INFO(">>>>>>>>");
 
+    output = env->get_user_ptr(env, args[0]);
+    DEBUG("output: '%p'", output);
+    output_layout = env->get_user_ptr(env, args[1]);
+    DEBUG("output_layout: '%p'", output_layout);
+    renderer = env->get_user_ptr(env, args[2]);
+    DEBUG("renderer: '%p'", renderer);
+    x = env->extract_integer(env, args[3]);
+    y = env->extract_integer(env, args[4]);
+    DEBUG("x: '%d'", x);
+    DEBUG("y: '%d'", y);
+    when = env->extract_time(env, args[5]);
+    INFO("check1");
+
+    r_data = calloc(1, sizeof(*r_data));
     r_data->output = output;
     r_data->output_layout = output_layout;
     r_data->renderer = renderer;
     r_data->x = x;
     r_data->y = y;
     r_data->when = when;
+    INFO("<<<<<<<<<<<<");
     return env->make_user_ptr(env, NULL, r_data);
-}
-emacs_value Fewlc_make_xwayland_surface_client_ptr(emacs_env *env, ptrdiff_t nargs,
-                                                   emacs_value args[], void *data)
-{
-    struct wlr_xwayland_surface *xwayland_surface = env->get_user_ptr(env, args[0]);
-    struct ewlc_client *c;
-    c = xwayland_surface->data = calloc(1, sizeof(*c));
-    return env->make_user_ptr(env, NULL, c);
+    //    return Qt;
 }
 
 emacs_value Fewlc_set_xwayland_surface_client_listeners(emacs_env *env, ptrdiff_t nargs,
@@ -436,6 +495,7 @@ emacs_value Fewlc_set_xwayland_surface_client_listeners(emacs_env *env, ptrdiff_
 
     c->surface_destroy_listener.notify = surface_destroy_notify;
     wl_signal_add(&xwayland_surface->events.destroy, &c->surface_destroy_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_free(emacs_env *env, ptrdiff_t nargs,
@@ -449,9 +509,9 @@ emacs_value Fewlc_make_keyboard_ptr(emacs_env *env, ptrdiff_t nargs,
                                     emacs_value args[], void *data)
 {
     struct ewlc_keyboard *kb;
-    struct wlr_input_device *device = env->get_user_ptr(env, args[0]);
-    kb = device->data = calloc(1, sizeof(*kb));
-    // kb->device = device;
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    kb = calloc(1, sizeof(*kb));
+    kb->server = s;
     return env->make_user_ptr(env, NULL, kb);
 }
 
@@ -495,15 +555,16 @@ emacs_value Fewlc_output_set_listeners(emacs_env *env, ptrdiff_t nargs,
 
     o->output_destroy_listener.notify = output_destroy_notify;
     wl_signal_add(&wlr_output->events.destroy, &o->output_destroy_listener);
+    return Qt;
 }
 
 emacs_value Fewlc_make_output_ptr(emacs_env *env, ptrdiff_t nargs,
                                   emacs_value args[], void *data)
 {
     struct ewlc_output *o;
-    struct wlr_output *wlr_output = env->get_user_ptr(env, args[0]);
-    o = wlr_output->data = calloc(1, sizeof(*o));
-    // o->wlr_output = wlr_output;
+    struct ewlc_server *s = env->get_user_ptr(env, args[0]);
+    o = calloc(1, sizeof(*o));
+    o->server = s;
     return env->make_user_ptr(env, NULL, o);
 }
 
@@ -567,14 +628,14 @@ void init_ewlc(emacs_env *env)
     func = env->make_function(env, 1, 1, Fewlc_make_output_ptr, "", NULL);
     bind_function(env, "ewlc-make-output-ptr", func);
 
-    func = env->make_function(env, 2, 2, Fewlc_make_deco_ptr, "", NULL);
+    func = env->make_function(env, 1, 1, Fewlc_make_deco_ptr, "", NULL);
     bind_function(env, "ewlc-make-deco-ptr", func);
 
     func = env->make_function(env, 1, 1, Fewlc_make_xdg_surface_client_ptr, "", NULL);
     bind_function(env, "ewlc-make-xdg-surface-client-ptr", func);
 
     func = env->make_function(env, 1, 1, Fewlc_make_xwayland_surface_client_ptr, "", NULL);
-    bind_function(env, "ewlc-make-xwayland-surface-client-data", func);
+    bind_function(env, "ewlc-make-xwayland-surface-client-ptr", func);
 
     func = env->make_function(env, 1, 1, Fewlc_make_keyboard_ptr, "", NULL);
     bind_function(env, "ewlc-make-keyboard-ptr", func);
@@ -661,7 +722,7 @@ void init_ewlc(emacs_env *env)
     func = env->make_function(env, 1, 1, Fewlc_set_sigchld, "", NULL);
     bind_function(env, "ewlc-set-sigchld", func);
 
-    func = env->make_function(env, 2, 2, Fewlc_create_render_data, "", NULL);
+    func = env->make_function(env, 6, 6, Fewlc_create_render_data, "", NULL);
     bind_function(env, "ewlc-create-render-data", func);
 
     func = env->make_function(env, 2, 2, Fewlc_chvt, "", NULL);
@@ -669,4 +730,15 @@ void init_ewlc(emacs_env *env)
 
     func = env->make_function(env, 1, 2, Fewlc_spawn, "", NULL);
     bind_function(env, "ewlc-spawn", func);
+
+    // --------------------------------
+
+    func = env->make_function(env, 2, 2, Fewlc_output_ptr_equal, "", NULL);
+    bind_function(env, "ewlc-output-ptr=", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_client_ptr_equal, "", NULL);
+    bind_function(env, "ewlc-client-ptr=", func);
+
+    func = env->make_function(env, 2, 2, Fewlc_keyboard_ptr_equal, "", NULL);
+    bind_function(env, "ewlc-keyboard-ptr=", func);
 }

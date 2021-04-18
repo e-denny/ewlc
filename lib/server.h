@@ -6,7 +6,7 @@
 #include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_input_device.h>.h>
+#include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 

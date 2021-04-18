@@ -21,8 +21,8 @@
 
 (load "/home/edgar/Projects/ewlc/src/ewlc-server.el")
 
-(start-wc)
-(exit-wc)
+(ewlc-start-compositor)
+(ewlc-command-kill)
 
 (provide 'run)
 ;;; run.el ends here

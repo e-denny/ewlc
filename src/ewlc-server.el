@@ -19,7 +19,10 @@
 ;;
 ;;; Code:
 
-(module-load "/home/edgar/Projects/ewlc/lib/ewlc.so")
+(setq debug-on-error t)
+
+;; (module-load "/home/edgar/Projects/ewlc/lib/ewlc.so")
+(load "/home/edgar/Projects/ewlc/lib/ewlc.so")
 
 (require 'cl-lib)
 (load "/home/edgar/Projects/ewlc/src/ewlc-log.el")
@@ -89,8 +92,9 @@
 
   ;; clients
   client-list
-  client-stack-list
-  client-focus-list
+  unmapped-client-list
+  stack-client-list
+  focus-client-list
   independent-list
   active-client
   grabbed-client
@@ -114,14 +118,20 @@
 (defun ewlc-update-window-type (client)
   "Update the window type for xwayland CLIENTs."
   (let ((xwayland-surface (ewlc-client-xwayland-surface client)))
+    ;; FIXME: this needs two parameters
     (when (ewlc-floating-type-p xwayland-surface)
       (setf (ewlc-client-floating-p client) t))))
 
 (defun ewlc-display-dispatch ()
   "Dispatch the event loop for the display."
   (let ((event-loop (wl-display-get-event-loop (ewlc-display *ewlc*))))
+    (log-message (format "ewlc-display-dispatch: event-loop: '%s'" event-loop))
+    (log-message (format "ewlc-display-dispatch: display: '%s'" (ewlc-display *ewlc*)))
     (wl-display-flush-clients (ewlc-display *ewlc*))
-    (wl-event-loop event-loop -1)))
+    (log-message (format "ewlc-display-dispatch: before wl-event-loop-dispatch"))
+    (wl-event-loop-dispatch event-loop -1)
+    (log-message (format "ewlc-display-dispatch: after wl-event-loop-dispatch"))
+    ))
 
 (defun ewlc-cleanup ()
   "Cleanup prior to exiting."
@@ -137,6 +147,7 @@
 
 (defun ewlc-start (shell-command)
   "Start the compositor with the startup application SHELL-COMMAND."
+  (log-message (format "ewlc-start: start"))
   (when (not (getenv "XDR_RUNTIME_DIR"))
     (error "XDR_RUNTIME_DIR must be set"))
   (let* ((server-ptr (ewlc-make-server-ptr))
@@ -166,9 +177,14 @@
                             :keyboard-list nil
                             :modifier-key "M"
                             :client-list nil
-                            :client-focus-list nil
-                            :client-stack-list nil
+                            :unmapped-client-list nil
+                            :focus-client-list nil
+                            :stack-client-list nil
                             :independent-list nil
+                            ;; TODO: are these next 2 settings sensible?
+                            :repeat-rate 25
+                            :repeat-delay 600
+                            :border-width 4
                             :root-color '(0.3 0.3 0.3 1.0)
                             :border-color '(0.5 0.5 0.5 1.0)
                             :focus-color '(1.0 0.0 0.0 1.0)))
@@ -188,7 +204,8 @@
     (ewlc-xdg-deco-set-listeners (ewlc-ptr *ewlc*) (ewlc-xdg-deco-mgr *ewlc*))
     (ewlc-cursor-set-listeners (ewlc-ptr *ewlc*) (ewlc-cursor *ewlc*))
     (ewlc-seat-set-listeners (ewlc-ptr *ewlc*) (ewlc-seat *ewlc*))
-    (ewlc-xwayland-set-listeners (ewlc-ptr *ewlc*) (ewlc-seat *ewlc*))
+    ;; FIXME: this causes a crash.
+    ;; (ewlc-xwayland-set-listeners (ewlc-ptr *ewlc*) (ewlc-seat *ewlc*))
     (setenv "DISPLAY" (wlr-xwayland-display-name (ewlc-xwayland *ewlc*)))
     (let ((socket (wl-display-add-socket-auto display)))
       (when (not socket)
@@ -203,36 +220,60 @@
              (cursor-mgr (ewlc-cursor-mgr *ewlc*))
              (x (wlr-cursor-x cursor))
              (y (wlr-cursor-y cursor)))
-        (setf (ewlc-active-output *ewlc*) (ewlc-get-output-at-point cursor))
+        (setf (ewlc-active-output *ewlc*) (ewlc-get-ewlc-output-at-point cursor))
+        (log-message (format "    ewlc-start: active-output: '%s'" (ewlc-active-output *ewlc*)))
+        (log-message (format "    +++++++++++++++++++++++++++++++"))
         (wlr-cursor-warp-closest cursor x y)
         (wlr-xcursor-manager-set-cursor-image cursor-mgr "left_ptr" cursor))
       (setenv "WAYLAND_DISPLAY" socket 1)
-      (start-process-shell-command "" nil shell-command))))
+      (start-process-shell-command "" nil shell-command)
+      (log-message (format "ewlc-start: end")))))
 
 (defun ewlc-keyboard-from-listener-container (keyboard-ptr)
   "Get the EWLC-KEYBOARD that has KEYBOARD-PTR in it's keyboard-ptr slot."
   (cl-dolist (ewlc-keyboard (ewlc-keyboard-list *ewlc*))
-    (when (equal keyboard-ptr (ewlc-keyboard-ptr ewlc-keyboard))
+    (when (ewlc-keyboard-ptr= keyboard-ptr (ewlc-keyboard-ptr ewlc-keyboard))
       (cl-return ewlc-keyboard))))
 
 (defun ewlc-output-from-listener-container (output-ptr)
   "Get the EWLC-OUTPUT that has OUTPUT-PTR in it's output-ptr slot."
+  (log-message (format "    ewlc-output-from-listener-container: output-ptr: '%s'" output-ptr))
+  (log-message (format "    ewlc-output-from-listener-container: output-list: '%s'"
+                       (ewlc-output-list *ewlc*)))
   (cl-dolist (ewlc-output (ewlc-output-list *ewlc*))
-    (when (equal output-ptr (ewlc-output-ptr ewlc-output))
+    (log-message (format "    =: '%s'" (ewlc-output-ptr=  output-ptr (ewlc-output-ptr ewlc-output))))
+    (when (ewlc-output-ptr= output-ptr (ewlc-output-ptr ewlc-output))
+      (log-message (format "    match"))
       (cl-return ewlc-output))))
 
 (defun ewlc-client-from-listener-container (client-ptr)
   "Get the EWLC-CLIENT that has CLIENT-PTR in it's client-ptr slot."
+  (log-message (format "    ewlc-client-from-listener-container: client-ptr: '%s'" client-ptr))
+  (log-message (format "    ewlc-client-from-listener-container: client-list: '%s'"
+                       (ewlc-client-list *ewlc*)))
+  (log-message (format "    ewlc-client-from-listener-container: unmapped-client-list: '%s'"
+                       (ewlc-unmapped-client-list *ewlc*)))
   (cl-dolist (ewlc-client (ewlc-client-list *ewlc*))
-    (when (equal client-ptr (ewlc-client-ptr ewlc-client))
+    (when (ewlc-client-ptr= client-ptr (ewlc-client-ptr ewlc-client))
+      (log-message (format "    client match"))
+      (cl-return ewlc-client)))
+  ;; Could not find client in client list, so try un-mapped clients
+  (cl-dolist (ewlc-client (ewlc-unmapped-client-list *ewlc*))
+    (when (ewlc-client-ptr= client-ptr (ewlc-client-ptr ewlc-client))
+      (log-message (format "    unmapped client match"))
       (cl-return ewlc-client))))
 
 (defun ewlc-handle-events ()
   "Handle all the events."
   ;; FIXME: need to get from pointer to defstruct that contains the pointer
   ;; i.e. find the pointer in the list of containers and hence the defstruct.
+  (log-message (format "ewlc-handle-events: start"))
+  (log-message (format "  pending events: '%s'" (ewlc-pending-events-p (ewlc-ptr *ewlc*))))
   (while (ewlc-pending-events-p (ewlc-ptr *ewlc*))
     (cl-destructuring-bind (event-container event-data event-type) (ewlc-get-event (ewlc-ptr *ewlc*))
+      (log-message (format "  event-container: '%s'\n  event-data: '%s'\n  event-type: '%s'"
+                           event-container event-data event-type))
+      (log-message (format "  ------------------------------"))
       (pcase event-type
         ('ewlc-pointer-axis
          (let ((wlr-event-pointer-axis event-data))
@@ -248,7 +289,6 @@
         ('ewlc-cursor-motion-absolute
          (let ((wlr-event-pointer-motion-absolute event-data))
            (ewlc-cursor-motion-absolute-handler wlr-event-pointer-motion-absolute)))
-
         ('ewlc-seat-request-set-cursor
          (let ((wlr-seat-pointer-request-set-cursor-event event-data))
            (ewlc-seat-pointer-request-set-cursor-handler wlr-seat-pointer-request-set-cursor-event)))
@@ -282,7 +322,8 @@
            (ewlc-backend-new-output-handler wlr-output)))
 
         ;; The event-data for decorations is a wlr_xdg_toplevel_decoration_v1 pointer.
-        ('ewlc-xdg-deco-mgr-new-toplevel-decoration
+        ('ewlc-deco-mgr-new-toplevel-decoration
+         (log-message (format "  >> case: '%s'" event-type))
          (let ((wlr-xdg-toplevel-decoration-v1 event-data))
            (ewlc-xdg-deco-mgr-new-toplevel-decoration-handler wlr-xdg-toplevel-decoration-v1)))
         ('ewlc-deco-destroy
@@ -299,10 +340,15 @@
         ('ewlc-output-frame
          (let* ((output-ptr event-container)
                 (ewlc-output (ewlc-output-from-listener-container output-ptr)))
+           (log-message (format "  output-ptr: '%s'" output-ptr))
+           (log-message (format "  ewlc-output: '%s'" ewlc-output))
            (ewlc-output-frame-handler ewlc-output)))
 
-        ('ewlc-new-xdg-shell-surface
+        ('ewlc-xdg-shell-new-surface
+         (log-message (format "  >> case: '%s'" event-type))
          (let ((wlr-xdg-surface event-data))
+           (log-message (format "  event-data: '%s'" event-data))
+           (log-message (format "  wlr-xdg-surface: '%s'" wlr-xdg-surface))
            (ewlc-new-xdg-shell-surface-handler wlr-xdg-surface)))
         ('ewlc-new-xwayland-surface
          (let ((wlr-xwayland-surface event-data))
@@ -334,7 +380,9 @@
         (_
          (error "Event not handled"))))
     ;; TODO: free the event point inside this function
-    (ewlc-remove-event (ewlc-ptr *ewlc*))))
+    (ewlc-remove-event (ewlc-ptr *ewlc*)))
+  (log-message (format "ewlc-handle-events: end"))
+  )
 
 
 ;; handlers ---------------------------------------------------
@@ -351,13 +399,21 @@
 
 (defun ewlc-xdg-deco-mgr-new-toplevel-decoration-handler (wlr-xdg-toplevel-decoration-v1)
   "Handler for toplevel decoration WLR-XDG-TOPLEVEL-DECORATION-V1."
-  (let* ((deco-ptr (ewlc-make-deco-ptr wlr-xdg-toplevel-decoration-v1 (ewlc-ptr *ewlc*))))
+  (log-message (format "    ewlc-xdg-deco-mgr-new-toplevel-decoration-handler: wlr-xdg-toplevel-decoration-v1: '%s'" wlr-xdg-toplevel-decoration-v1))
+  (let* ((deco-ptr (ewlc-make-deco-ptr (ewlc-ptr *ewlc*))))
+    (log-message (format "    ewlc-xdg-deco-mgr-new-toplevel-decoration-handler: check1"))
     (ewlc-set-xdg-deco-mgr-toplevel-listeners deco-ptr wlr-xdg-toplevel-decoration-v1)
-    (ewlc-deco-request-mode-handler wlr-xdg-toplevel-decoration-v1)))
+    (log-message (format "    ewlc-xdg-deco-mgr-new-toplevel-decoration-handler: check2"))
+    (ewlc-deco-request-mode-handler wlr-xdg-toplevel-decoration-v1))
+  (log-message (format "    ewlc-xdg-deco-mgr-new-toplevel-decoration-handler: end"))
+  )
 
 (defun ewlc-deco-request-mode-handler (wlr-xdg-toplevel-decoration-v1)
   "Handle WLR-XDG-TOPLEVEL-DECORATION-V1 set mode event."
-  (wlr-xdg-toplevel-decoration-v1-set-mode wlr-xdg-toplevel-decoration-v1))
+  (log-message (format "    ewlc-deco-request-mode-handler: check1"))
+  (wlr-xdg-toplevel-decoration-v1-set-mode wlr-xdg-toplevel-decoration-v1)
+  (log-message (format "    ewlc-deco-request-mode-handler: check2"))
+  )
 
 (defun ewlc-deco-destroy-handler (wlr-xdg-toplevel-decoration-v1)
   "Handle WLR-XDG-TOPLEVEL-DECORATION-V1 destory event."
@@ -368,17 +424,39 @@
 ;; output
 ;; ------------------------------------------------------------
 
+(defun ewlc-output-from-wlr-output (wlr-output)
+  "Get the EWLC-OUTPUT that has WLR-OUTPUT in it's slot."
+  (log-message (format "    ewlc-output-from-wlr-output: wlr-output: '%s'" wlr-output))
+  (log-message (format "    ewlc-output-from-wlr-output: output-list: '%s'" (ewlc-output-list *ewlc*)))
+  (cl-dolist (ewlc-output (ewlc-output-list *ewlc*))
+    (log-message (format "    ewlc-output-from-wlr-output: wlr-output-1: '%s'" wlr-output))
+    (log-message (format "    ewlc-output-from-wlr-output: wlr-output-2: '%s'" (ewlc-output-wlr-output ewlc-output)))
+    (log-message (format "    =: '%s'" (wlr-output=  wlr-output (ewlc-output-wlr-output ewlc-output))))
+    (when (wlr-output= wlr-output (ewlc-output-wlr-output ewlc-output))
+      (log-message (format "    match"))
+      (cl-return ewlc-output))))
 
-(defun ewlc-get-output-at-point (cursor)
+(defun ewlc-get-ewlc-output-at-point (cursor)
+  "Get the ewlc-output at the CURSOR."
+  (let* ((output-layout (ewlc-output-layout *ewlc*))
+         (wlr-output (wlr-output-layout-output-at output-layout cursor)))
+    (log-message (format "    ewlc-get-ewlc-output-at-point: output-layout: '%s'" output-layout))
+    (log-message (format "    ewlc-get-ewlc-output-at-point: wlr-output: '%s'" wlr-output))
+    (log-message (format "    ewlc-get-ewlc-output-at-point: output-list: '%s'" (ewlc-output-list *ewlc*)))
+    (if wlr-output
+        (ewlc-output-from-wlr-output wlr-output)
+      nil)))
+
+;; FIXME: I re-named this function - change all the calls to it.
+(defun ewlc-get-wlr-output-at-point (cursor)
   "Get the wlr-output at the CURSOR."
-  (let* ((output-layout (ewlc-output-layout *ewlc*)))
+  (let ((output-layout (ewlc-output-layout *ewlc*)))
     ;; can return nil
     (wlr-output-layout-output-at output-layout cursor)))
 
 (defun ewlc-output= (ewlc-output-1 ewlc-output-2)
   "Compare EWLC-OUTPUT-1 and EWLC-OUTPUT-2."
-  ;; TODO: does this work?
-  (equal (ewlc-output-ptr ewlc-output-1) (ewlc-output-ptr ewlc-output-2)))
+  (ewlc-output-ptr= (ewlc-output-ptr ewlc-output-1) (ewlc-output-ptr ewlc-output-2)))
 
 (defun ewlc-set-next-output (direction)
   "Set the active output on the basis of the DIRECTION."
@@ -386,19 +464,22 @@
          (curr-ewlc-output (ewlc-active-output *ewlc*))
          (len (length output-list))
          (pos (cl-position curr-ewlc-output output-list :test 'ewlc-output=)))
-    (setf (ewlc-active-output *ewlc*) (cond ((equal direction 'next)
-                                             (if (< (+ pos 1) len)
-                                                 (nth (+ pos 1) output-list)
-                                               (nth 0 output-list)))
-                                            ((equal direction 'prev)
-                                             (if (= pos 0)
-                                                 (nth (- len 1) output-list)
-                                               (nth (- pos 1) output-list)))))))
+    (setf (ewlc-active-output *ewlc*) (cond
+                                       ((equal direction 'next)
+                                        (if (< (+ pos 1) len)
+                                            (nth (+ pos 1) output-list)
+                                          (nth 0 output-list)))
+                                       ((equal direction 'prev)
+                                        (if (= pos 0)
+                                            (nth (- len 1) output-list)
+                                          (nth (- pos 1) output-list)))))))
 
 (defun ewlc-arrange (ewlc-output)
   "Tile the visible clients on the EWLC-OUTPUT."
-  (setf (ewlc-output-box output) (ewlc-output-layout-get-box (ewlc-output-layout *ewlc*)
-                                                             (ewlc-output-wlr-output ewlc-output)))
+  (log-message (format "          ewlc-arrange: ewlc-output: '%s'" ewlc-output))
+  (setf (ewlc-output-box ewlc-output) (wlr-output-layout-get-box (ewlc-output-layout *ewlc*)
+                                                                 (ewlc-output-wlr-output ewlc-output)))
+  (log-message (format "          ewlc-arrange: box: '%s'" (ewlc-output-box ewlc-output)))
   (let* ((n 0)
          (i 0)
          (my 0)
@@ -409,33 +490,52 @@
          (ox (wlr-box-x output-box))
          (oy (wlr-box-y output-box))
          (ow (wlr-box-width output-box))
-         (oh (wlr-box-height output-box)))
-    ;; FIXME: can I create the needed list with a filter ?
+         (oh (wlr-box-height output-box))
+         (num-master (ewlc-output-num-master ewlc-output))
+         (master-ratio (ewlc-output-master-ratio ewlc-output)))
+    (log-message (format "          ewlc-arrange: check1"))
+    (log-message (format "          ewlc-arrange: ox: '%s'" ox))
+    (log-message (format "          ewlc-arrange: oy: '%s'" oy))
+    (log-message (format "          ewlc-arrange: ow: '%s'" ow))
+    (log-message (format "          ewlc-arrange: oh: '%s'" oh))
+    ;; TODO: can I create the needed list with a filter ?
     (dolist (client (ewlc-client-list *ewlc*))
       (when (and (ewlc-client-visible-on-output-p client ewlc-output)
                  (not (ewlc-client-floating-p client)))
         (cl-incf n)))
+    (log-message (format "          ewlc-arrange: check2"))
     (when (> n 0)
-      (if (> n (ewlc-output-num-master ewlc-output))
-          (setq mw (if (ewlc-output-num-master ewlc-output)
-                       (* ow (ewlc-output-master-ratio ewlc-output))
+      (log-message (format "          ewlc-arrange: check3"))
+      (if (> n num-master)
+          (setq mw (if (> num-master 0)
+                       (* ow master-ratio)
                      0))
-        (setq mw (ewlc-box-width ewlc-output)))
+        ;; FIXME: this is the error
+        (setq mw ow)
+        (log-message (format "          ewlc-arrange: mw: '%s'" mw))
+        )
+      (log-message (format "          ewlc-arrange: check4"))
       (dolist (client (ewlc-client-list *ewlc*))
+        (log-message (format "          ewlc-arrange: check5"))
         (let* ((client-geom (ewlc-client-geom client))
                (ch (wlr-box-height client-geom)))
+          (log-message (format "          ewlc-arrange: check6"))
           (when (and (ewlc-client-visible-on-output-p client ewlc-output)
                      (not (ewlc-client-floating-p client)))
-            (if (< i (ewlc-output-num-master ewlc-output))
+            (log-message (format "          ewlc-arrange: check7"))
+            (if (< i num-master)
                 (progn
                   (setq h (/ (- oh my)
-                             (- (min n (ewlc-output-num-master ewlc-output)) i)))
+                             (- (min n num-master) i)))
+                  (log-message (format "          ewlc-arrange: check8"))
                   (ewlc-resize client ox (+ oy my) mw h 0)
                   (setq my (+ my ch)))
               (setq h (/ (- oh ty) (- n i)))
               (ewlc-resize client (+ ox mw) (+ oy ty) (- ow mw) h 0)
               (setq my (+ my ch))))
-          (cl-incf i))))))
+          (cl-incf i)))))
+  (log-message (format "          ewlc-arrange: end"))
+  )
 
 ;; handlers ---------------------------------------------------
 
@@ -443,50 +543,69 @@
   "This event is raised when new WLR-OUTPUT (a display) becomes available."
   ;; Set the output's preferred mode.
   (wlr-output-set-mode wlr-output (wlr-output-preferred-mode wlr-output))
-  (let* ((output-ptr (ewlc-make-output-ptr wlr-output))
+  (let* ((output-ptr (ewlc-make-output-ptr (ewlc-ptr *ewlc*)))
          (output (make-ewlc-output :ptr output-ptr
                                    :wlr-output wlr-output
                                    :master-ratio 0.5
                                    :num-master 1
-                                   :scale 2)))
+                                   :scale 2.0)))
     (wlr-output-set-scale wlr-output (ewlc-output-scale output))
     (wlr-xcursor-manager-load (ewlc-cursor-mgr *ewlc*) (ewlc-output-scale output))
     (wlr-output-set-transform wlr-output)
     (ewlc-output-set-listeners output-ptr wlr-output)
     (push output (ewlc-output-list *ewlc*))
-    (wlr-output-enable wlr-output 1)
+    (wlr-output-enable wlr-output)
     (when (wlr-output-commit wlr-output)
       ;; The add-auto function arranges outputs from left-to-right in handled order.
       (wlr-output-layout-add-auto (ewlc-output-layout *ewlc*) wlr-output)
-      (setf (ewlc-output-geom *ewlc*) (wlr-output-layout-get-box (ewlc-output-layout *ewlc*))))))
+      (setf (ewlc-output-geom *ewlc*) (wlr-output-layout-get-box (ewlc-output-layout *ewlc*)
+                                                                 wlr-output))
+      (setf (ewlc-output-box output) (ewlc-output-geom *ewlc*))
+      (log-message (format "    ewlc-backend-new-output-handler: box: '%s'" (ewlc-output-box output)))
+      )))
 
 (defun ewlc-output-frame-handler (ewlc-output)
   "EWLC-OUTPUT frame handler.
 Called every time the output is ready to display a frame, generally at
 the output's refresh rate."
+  (log-message (format "    ewlc-output-frame-handler: start"))
   (let ((now (current-time))
         (render t)
         (renderer (ewlc-renderer *ewlc*))
-        (wlr-output (ewlc-output-wlr-output ewlc-output)))
-    (dolist (client (ewlc-client-stack-list *ewlc*))
+        (wlr-output (ewlc-output-wlr-output ewlc-output))
+        (color (ewlc-root-color *ewlc*)))
+    (log-message (format "    ewlc-output-frame-handler: check1"))
+    (dolist (client (ewlc-stack-client-list *ewlc*))
       (when (ewlc-client-resize-p client)
         (wlr-surface-send-frame-done (ewlc-client-wlr-surface client) now)
         ;; do not render if any xdg clients have an outstanding resize
         (setq render nil)))
+    (log-message (format "    ewlc-output-frame-handler: check2"))
     (when (wlr-output-attach-render wlr-output)
       (when render
-        (wlr-renderer-begin renderer wlr-output))
-      (wlr-renderer-clear renderer (ewlc-root-color *ewlc*))
-      (ewlc-render-clients ewlc-output now)
-      (ewlc-render-independents wlr-output now)
-      ;; This function is a no-op when hardware cursors are in use.
-      (wlr-output-render-software-cursors wlr-output)
-      (wlr-renderer-end renderer))
-    (wlr-output-commit wlr-output)))
+        (log-message (format "    ewlc-output-frame-handler: check2.1"))
+        (wlr-renderer-begin renderer wlr-output)
+        (log-message (format "    ewlc-output-frame-handler: check2.2"))
+        ;; set background color
+        (wlr-renderer-clear renderer color)
+        (log-message (format "    ewlc-output-frame-handler: check2.3"))
+        (ewlc-render-clients ewlc-output now)
+        (log-message (format "    ewlc-output-frame-handler: check2.4"))
+        (ewlc-render-independents wlr-output now)
+        (log-message (format "    ewlc-output-frame-handler: check2.5"))
+        ;; This function is a no-op when hardware cursors are in use.
+        (wlr-output-render-software-cursors wlr-output)
+        (log-message (format "    ewlc-output-frame-handler: check2.6"))
+        (wlr-renderer-end renderer)))
+    (log-message (format "    ewlc-output-frame-handler: check3"))
+    (wlr-output-commit wlr-output)
+    (log-message (format "    ewlc-output-frame-handler: end"))
+    ))
 
 (defun ewlc-output-destroy-handler (ewlc-output)
   "Handler for the destroy EWLC-OUTPUT signal."
-  (setf (ewlc-output-list *ewlc*) (cl-remove ewlc-output (ewlc-output-list *ewlc*)
+  (setf (ewlc-output-list *ewlc*) (cl-remove ewlc-output
+                                             (ewlc-output-list *ewlc*)
                                              :test 'ewlc-output=))
   (ewlc-free (ewlr-output-ptr ewlc-output)))
 
@@ -496,23 +615,34 @@ the output's refresh rate."
 
 (defun ewlc-client= (client-a client-b)
   "Return t if CLIENT-A and CLIENT-B are equal, else return nil."
-  ;; TODO: check that this works
-  (equal (ewlc-client-ptr client-a) (ewlc-client-ptr client-b)))
+  (log-message (format "      ewlc-client=: ptr-a: '%s'" (ewlc-client-ptr client-a)))
+  (log-message (format "      ewlc-client=: ptr-b: '%s'" (ewlc-client-ptr client-a)))
+  (log-message (format "      ewlc-client=: =: '%s'" (ewlc-client-ptr= (ewlc-client-ptr client-a) (ewlc-client-ptr client-b))))
+  (ewlc-client-ptr= (ewlc-client-ptr client-a) (ewlc-client-ptr client-b))
+  )
 
 (defun ewlc-apply-title (client ewlc-output)
   "Apply title to CLIENT on EWLC-OUTPUT."
+  (log-message (format "      ewlc-apply-title: start"))
   (pcase (ewlc-client-type client)
     ('xdg-shell
+     (log-message (format "      ewlc-apply-title: xdg-shell"))
      (let ((surface (ewlc-client-xdg-surface client)))
+       (log-message (format "      ewlc-apply-title: surface: '%s'" surface))
        (setf (ewlc-client-app-id client) (wlr-xdg-surface-get-app-id surface))
        (setf (ewlc-client-title client) (wlr-xdg-surface-get-title surface))))
     (_
      (let ((surface (ewlc-client-xwayland-surface client)))
        (setf (ewlc-client-app-id client) (wlr-xwayland-surface-get-class surface))
        (setf (ewlc-client-title client) (wlr-xwayland-surface-get-title surface)))))
+  (log-message (format "      ewlc-apply-title: check1"))
   (when (not (ewlc-client-app-id client)) (setf (ewlc-client-app-id client) "broken"))
+  (log-message (format "      ewlc-apply-title: check2"))
   (when (not (ewlc-client-title client)) (setf (ewlc-client-client client) "broken"))
-  (ewlc-set-output client ewlc-output))
+  (log-message (format "      ewlc-apply-title: check2"))
+  (ewlc-set-output client ewlc-output)
+  (log-message (format "      ewlc-apply-title: end"))
+  )
 
 (defun ewlc-client-wlr-surface (client)
   "Get the wlr_surface for the CLIENT's wlr_xdg_surface or wlr_xwayland surface."
@@ -522,10 +652,13 @@ the output's refresh rate."
 
 (defun ewlc-render-clients (output time)
   "Render the clients on OUTPUT at TIME."
+  (log-message (format "        ewlc-render-clients: output: '%s'" output))
+  (log-message (format "        ewlc-render-clients: time: '%s'" time))
   (let ((active-client (ewlc-get-active-client)))
     ;; Each subsequent window we render is rendered on top of the last. Because
     ;; our stacking list is ordered front-to-back, we iterate over it backwards.
-    (dolist (client (reverse (ewlc-client-stack-list *ewlc*)))
+    (dolist (client (reverse (ewlc-stack-client-list *ewlc*)))
+      (log-message (format "        ewlc-render-clients: client: '%s'" client))
       (when (or (ewlc-client-visible-on-output-p client output)
                 (wlr-output-layout-intersects (elwc-output-layout *ewlc*)
                                               (ewlc-output-wlr-output output)
@@ -549,28 +682,61 @@ the output's refresh rate."
                (border-color (if (ewlc-client= client active-client)
                                  (ewlc-focus-color *ewlc*)
                                (ewlc-border-color *ewlc*))))
+          (log-message (format "        ewlc-render-clients: check1"))
+          (log-message (format "        ewlc-render-clients: surface: '%s'" (ewlc-client-wlr-surface client)))
+          (log-message (format "        ewlc-render-clients: orig-x: '%s'" orig-x))
+          (log-message (format "        ewlc-render-clients: orig-y: '%s'" orig-y))
+          (log-message (format "        ewlc-render-clients: bw: '%s'" bw))
+          (log-message (format "        ewlc-render-clients: w: '%s'" w))
+          (log-message (format "        ewlc-render-clients: h: '%s'" h))
+          (log-message (format "        ewlc-render-clients: layout: '%s'" (ewlc-output-layout *ewlc*)))
+          (log-message (format "        ewlc-render-clients: wlr-output: '%s'" (ewlc-output-wlr-output output)))
+          (log-message (format "        ewlc-render-clients: output-coords: '%s'" output-coords))
+          (log-message (format "        ewlc-render-clients: check2"))
           ;; render the client borders
           (dolist (border border-list)
             (cl-destructuring-bind (x y w h) border
+              (log-message (format "        ewlc-render-clients: ('%s', '%s', '%s', '%s')" x y w h))
               (let ((border-box (wlr-box-create x y w h)))
                 (wlr-scale-box border-box (ewlc-output-scale output))
                 (wlr-render-rect (ewlc-renderer *ewlc*)
                                  border-box
                                  border-color
                                  (ewlc-output-wlr-output output)))))
+          (log-message (format "        ewlc-render-clients: check3"))
           ;; render the client surfaces
+
           (let* ((x (+ (wlr-box-x (ewlc-client-geom client)) bw))
                  (y (+ (wlr-box-y (ewlc-client-geom client)) bw))
-                 (render-data (ewlc-create-render-data (ewlc-output-wlr-output *ewlc*)
+                 )
+            (log-message (format "        ewlc-render-clients: x: '%s'" x))
+            (log-message (format "        ewlc-render-clients: y: '%s'" y))
+            (log-message (format "        ewlc-render-clients: layout: '%s'" (ewlc-output-layout *ewlc*)))
+            (log-message (format "        ewlc-render-clients: wlr-output: '%s'" (ewlc-output-wlr-output output)))
+            (log-message (format "        ewlc-render-clients: renderer: '%s'" (ewlc-renderer *ewlc*)))
+            (log-message (format "        ewlc-render-clients: time: '%s'" time))
+            (log-message (format "        ewlc-render-clients: check3.1"))
+            )
+          (let* ((x (+ (wlr-box-x (ewlc-client-geom client)) bw))
+                 (y (+ (wlr-box-y (ewlc-client-geom client)) bw))
+                 (render-data (ewlc-create-render-data (ewlc-output-wlr-output output)
                                                        (ewlc-output-layout *ewlc*)
                                                        (ewlc-renderer *ewlc*)
-                                                       x y time)))
+                                                       x y time))
+                 )
+            (log-message (format "        ewlc-render-clients: check3.2"))
             (if (equal (ewlc-client-type client) 'xdg-shell)
-                (wlr-xdg-surface-for-each-surface-render (ewlc-client-xdg-surface client)
-                                                         render-data)
+                (progn
+                  (log-message (format "        ewlc-render-clients: check3.3"))
+                  (wlr-xdg-surface-for-each-surface-render (ewlc-client-xdg-surface client)
+                                                           render-data)
+                  (log-message (format "        ewlc-render-clients: check3.4"))
+                  )
               (wlr-surface-for-each-surface-render (wlr-xwayland-surface-get-wlr-surface
                                                     (ewlc-client-xwayland-surface client))
-                                                   render-data))))))))
+                                                   render-data)))))))
+  (log-message (format "        ewlc-render-clients: end"))
+  )
 
 (defun ewlc-render-independents (wlr-output time)
   "Render independents for WLR-OUTPUT at TIME."
@@ -591,7 +757,7 @@ the output's refresh rate."
 
 (defun ewlc-get-top-client-focus (ewlc-output)
   "Get the top focused client on the EWLC-OUTPUT."
-  (cl-dolist (client (ewlc-client-focus-list *ewlc*))
+  (cl-dolist (client (ewlc-focus-client-list *ewlc*))
     (when (ewlc-client-visible-on-output-p client ewlc-output)
       (cl-return client))))
 
@@ -604,22 +770,38 @@ the output's refresh rate."
 
 (defun ewlc-set-output (client target-output)
   "Set CLIENT to TARGET-OUTPUT."
+  (log-message (format "        ewlc-set-output: client: '%s'" client ))
+  (log-message (format "        ewlc-set-output: target-output: '%s'" target-output))
   (let* ((curr-output (ewlc-client-output client))
-         (old-wlr-output (ewlc-output-wlr-output curr-output))
-         (new-wlr-output (ewlc-output-wlr-output target-output))
-         (client-surface (ewlc-get-wlr-surface client))
+         (client-wlr-surface (ewlc-get-wlr-surface client))
          new-client)
-    (when (and target-output (not (equal target-output curr-output)))
-      (setf (ewlc-client-outout client) target-output)
+    (log-message (format "        ewlc-set-output: curr-output: '%s'" (ewlc-client-output client)))
+    (log-message (format "        ewlc-set-output: client-surface: '%s'" client-wlr-surface))
+    (when (or (and target-output (not curr-output))
+              (and target-output (not (ewlc-output= target-output curr-output))))
+      (log-message (format "        ewlc-set-output: check1"))
+      (setf (ewlc-client-output client) target-output)
       (when curr-output
-        (wlr-surface-send-leave client-surface old-wlr-output)
-        (ewlc-arrange curr-output))
+        (log-message (format "        ewlc-set-output: curr-output: '%s'" curr-output))
+        (let ((curr-wlr-output (ewlc-output-wlr-output curr-output)))
+          (wlr-surface-send-leave client-wlr-surface curr-wlr-output)
+          (ewlc-arrange curr-output)))
       (when target-output
-        (ewlc-apply-bounding-box client (ewlc-output-box target-output))
-        (wlr-surface-send-enter client-surface new-wlr-output)
-        (ewlc-arrange target-output))
-      (setq new-client (ewlc-get-top-client (ewlc-active-output *ewlc*)))
-      (ewlc-focus-client client new-client t))))
+        (log-message (format "        ewlc-set-output: target-output: '%s'" target-output))
+        (let ((target-wlr-output (ewlc-output-wlr-output target-output)))
+          (log-message (format "        ewlc-set-output: target-wlr-output: '%s'" target-wlr-output))
+          (log-message (format "        ewlc-set-output: output-box: '%s'" (ewlc-output-box target-output)))
+          (ewlc-apply-bounding-box client (ewlc-output-box target-output))
+          (log-message (format "        ewlc-set-output: check2"))
+          (wlr-surface-send-enter client-wlr-surface target-wlr-output)
+          (log-message (format "        ewlc-set-output: check3"))
+          (ewlc-arrange target-output)))
+      (log-message (format "        ewlc-set-output: check4"))
+      (setq new-client (ewlc-get-top-client-focus (ewlc-active-output *ewlc*)))
+      (log-message (format "        ewlc-set-output: new-client: '%s'" new-client))
+      (ewlc-focus-client client new-client t)))
+  (log-message (format "        ewlc-set-output: end"))
+  )
 
 (defun ewlc-pointer-focus (client surface x y time-msec)
   "Focus the CLIENT or SURFACE at the pointer X Y coordinates at TIME-MSEC."
@@ -630,7 +812,7 @@ the output's refresh rate."
       (cond ((not surface)
              ;; there is no surface, so clear pointer focus
              (wlr-seat-pointer-notify-clear-focus (ewlc-seat *ewlc*)))
-            ((equal surface pointer-focused-surface)
+            ((wlr-surface= surface pointer-focused-surface)
              ;; surface is already focused. Notify of motion.
              (wlr-seat-pointer-notify-motion seat time-msec x y))
             (t
@@ -640,60 +822,77 @@ the output's refresh rate."
 
 (defun ewlc-get-client-at-point (cursor)
   "Get the client at the CURSOR point."
-  (cl-dolist (client (ewlc-client-stack-list *ewlc*))
+  (cl-dolist (client (ewlc-stack-client-list *ewlc*))
     (when (and (ewlc-client-visible-on-output-p client (ewlc-client-output client))
                (wlr-box-contains-point (ewlc-client-geom client) cursor))
       (cl-return client))))
 
 (defun ewlc-get-wlr-surface (client)
   "Get the wlr_surface for the CLIENT."
-  (if (equal (ewlc-client-type client) 'xdg-shell)
-      (wlr-xdg-surface-get-wlr-surface (ewlc-client-xdg-surface client))
-    (wlr-xwayland-surface-get-wlr-surface (ewlc-client-xwayland-surface client))))
+  (pcase (ewlc-client-type client)
+    ('xdg-shell
+     (wlr-xdg-surface-get-wlr-surface (ewlc-client-xdg-surface client)))
+    (_
+     (wlr-xwayland-surface-get-wlr-surface (ewlc-client-xwayland-surface client)))))
 
 (defun ewlc-apply-bounding-box (client bounding-box)
   "Apply BOUNDING-BOX to CLIENT geometry."
-  (let ((c-geom (ewlc-client-geom client))
-        (bw (ewlc-bw *ewlc*))
+  (log-message (format "          ewlc-apply-bounding-box: client: '%s'" client))
+  (log-message (format "          ewlc-apply-bounding-box: bounding-box: '%s'" bounding-box))
+  (let ((client-geom (ewlc-client-geom client))
+        (bw (ewlc-border-width *ewlc*))
         (x (wlr-box-x bounding-box))
         (y (wlr-box-y bounding-box))
         (width (wlr-box-width bounding-box))
         (height (wlr-box-height bounding-box)))
-    (wlr-set-box-width c-geom (max 1 (wlr-box-width c-geom)))
-    (wlr-set-box-height c-geom (max 1 (wlr-box-height c-geom)))
-    (when (>= (wlr-box-x c-geom) (+ x width))
-      (wlr-set-box-x c-geom (- (+ x width) (wlr-box-width c-geom))))
-    (when (>= (wlr-box-y c-geom) (+ y height))
-      (wlr-set-box-y c-geom (- (+ y height) (wlr-box-height c-geom))))
-    (when (<= (+ (wlr-box-x c-geom) (wlr-box-width c-geom) (* 2 bw)) x)
-      (wlr-set-box-x c-geom x))
-    (when (<= (+ (wlr-box-y c-geom) (wlr-box-height c-geom) (* 2 bw)) y)
-      (wlr-set-box-y c-geom y))))
+    (log-message (format "          ewlc-apply-bounding-box: x: '%s'" x))
+    (log-message (format "          ewlc-apply-bounding-box: y: '%s'" y))
+    (wlr-set-box-width client-geom (max 1 (wlr-box-width client-geom)))
+    (wlr-set-box-height client-geom (max 1 (wlr-box-height client-geom)))
+    (when (>= (wlr-box-x client-geom) (+ x width))
+      (wlr-set-box-x client-geom (- (+ x width) (wlr-box-width client-geom))))
+    (when (>= (wlr-box-y client-geom) (+ y height))
+      (wlr-set-box-y client-geom (- (+ y height) (wlr-box-height client-geom))))
+    (when (<= (+ (wlr-box-x client-geom) (wlr-box-width client-geom) (* 2 bw)) x)
+      (wlr-set-box-x client-geom x))
+    (when (<= (+ (wlr-box-y client-geom) (wlr-box-height client-geom) (* 2 bw)) y)
+      (wlr-set-box-y client-geom y)))
+  (log-message (format "          ewlc-apply-bounding-box: end"))
+  )
 
 
 (defun ewlc-client-visible-on-output-p (client output)
   "Return t if CLIENT is visible on OUTPUT."
-  (equal (ewlc-client-output client) output))
+  (ewlc-output= (ewlc-client-output client) output))
 
 (defun ewlc-get-active-client ()
-  "Get the active client from client-focus-list that visible on the output."
+  "Get the active client from focus-client-list that visible on the output."
   (let ((output (ewlc-active-output *ewlc*))
-        (client (car (ewlc-client-focus-list *ewlc*))))
+        (client (car (ewlc-focus-client-list *ewlc*))))
     (if (and client (ewlc-client-visible-on-output-p client output))
         client
       nil)))
 
 (cl-defun ewlc-focus-client (old-client new-client raise-p)
   "Focus the NEW-CLIENT and raise if RAISE-P is t, unfocus the OLD-CLIENT."
+  (log-message (format "          ewlc-focus-client: old-client: '%s'" old-client))
+  (log-message (format "          ewlc-focus-client: new-client: '%s'" new-client))
+  (log-message (format "          ewlc-focus-client: raise-p: '%s'" raise-p))
   (when (and new-client raise-p)
-    (setf (ewlc-stack-list *ewlc*)
-          (cl-remove new-client (ewlc-stack-list *ewlc*) :test 'ewlc-client=))
-    (setf (ewlc-stack-list *ewlc*) (push new-client (ewlc-stack-list *ewlc*))))
-  (when (equal old-client new-client)
+    (log-message (format "          ewlc-focus-client: stack-client-list '%s'" (ewlc-stack-client-list *ewlc*)))
+    (setf (ewlc-stack-client-list *ewlc*)
+          (cl-remove new-client (ewlc-stack-client-list *ewlc*) :test 'ewlc-client=))
+    (log-message (format "          ewlc-focus-client: check1"))
+    (push new-client (ewlc-stack-client-list *ewlc*)))
+  (log-message (format "          ewlc-focus-client: stack-client-list '%s'" (ewlc-stack-client-list *ewlc*)))
+  (log-message (format "          ewlc-focus-client: compare: '%s'" (ewlc-client= old-client new-client)))
+  (when (ewlc-client= old-client new-client)
     ;; nothing to do
+    (log-message (format "          ewlc-focus-client: return-from"))
     (cl-return-from ewlc-focus-client))
+  (log-message (format "          ewlc-focus-client: check2"))
   (when (and old-client
-             (not (equal old-client new-client)))
+             (not (ewlc-client= old-client new-client)))
     ;; de-activate old client
     (if (equal (ewlc-client-type old-client) 'xdg-shell)
         (wlr-xdg-toplevel-set-activated (ewlc-client-xdg-surface old-client) 0)
@@ -707,19 +906,27 @@ the output's refresh rate."
     ;; there is a new-client - so focus it
     (wlr-set-keyboard-notify-enter seat (ewlc-client-wlr-surface new-client) keyboard)
     ;; put client at top of focus list
-    (setf (ewlc-focus-list *ewlc*)
-          (cl-remove new-client (ewlc-focus-list *ewlc*) :test 'ewlc-client=))
-    (setf (ewlc-focus-list *ewlc*) (push new-client (ewlc-focus-list *ewlc*))))
+    (setf (ewlc-focus-client-list *ewlc*)
+          (cl-remove new-client (ewlc-focus-client-list *ewlc*) :test 'ewlc-client=))
+    (setf (ewlc-focus-client-list *ewlc*) (push new-client (ewlc-focus-client-list *ewlc*))))
   ;; activate new client
   (if (equal (ewlc-client-type old-client) 'xdg-shell)
       (wlr-xdg-toplevel-set-activated (ewlc-client-xdg-surface old-client) 0)
-    (wlr-xwayland-surface-activate (ewlc-client-xwayland-surface old-client) 0)))
+    (wlr-xwayland-surface-activate (ewlc-client-xwayland-surface old-client) 0))
+  (log-message (format "          ewlc-focus-client: end"))
+  )
 
 
 (defun ewlc-resize (client x y width height interact-p)
   "Resize to CLIENT to X, Y, WIDTH, HEIGHT depending on INTERACT-P.
 In a more fleshed-out compositor, wait for the client to prepare a buffer
 at the new size, then commit any movement that was prepared."
+  (log-message (format "            ewlc-resize: client: '%s'" client))
+  (log-message (format "            ewlc-resize: x: '%s'" x))
+  (log-message (format "            ewlc-resize: y: '%s'" y))
+  (log-message (format "            ewlc-resize: width: '%s'" width))
+  (log-message (format "            ewlc-resize: height: '%s'" height))
+  (log-message (format "            ewlc-resize: interact-p: '%s'" interact-p))
   (let* ((client-geom (ewlc-client-geom client))
          (bbox (if interact-p
                    (ewlc-output-geom *ewlc*)
@@ -729,21 +936,36 @@ at the new size, then commit any movement that was prepared."
     (wlr-set-box-width client-geom width)
     (wlr-set-box-height client-geom height)
     (ewlc-apply-bounding-box client bbox))
+  (log-message (format "            ewlc-resize: check1"))
   (let* ((border-width (ewlc-border-width *ewlc*))
          (bclient-geom (ewlc-client-geom client))
          (bx (wlr-box-x bclient-geom))
          (by (wlr-box-y bclient-geom))
          (bwidth (wlr-box-width bclient-geom))
          (bheight (wlr-box-height bclient-geom)))
-    (if (equal (ewlc-client-type client) 'xdg-shell)
-        (wlr-xdg-toplevel-set-size (ewlc-xdg-surface client)
-                                   (- bwidth (* 2 border-width))
-                                   (- bheight (* 2 border-width)))
-      (wlr-xwayland-surface-configure (ewlc-xwayland-surface client)
-                                      bx
-                                      by
-                                      (- bwidth (* 2 border-width))
-                                      (- bheight (* 2 border-width))))))
+    (log-message (format "            ewlc-resize: check2"))
+    (pcase (ewlc-client-type client)
+      ('xdg-shell
+       (log-message (format "            ewlc-resize: check3"))
+       (log-message (format "            ewlc-resize: xdg-surface: '%s'" (ewlc-client-xdg-surface client)))
+       (log-message (format "            ewlc-resize: bwidth: '%s'" bwidth))
+       (log-message (format "            ewlc-resize: bheight: '%s'" bheight))
+       (log-message (format "            ewlc-resize: border-width: '%s'" border-width))
+       (wlr-xdg-toplevel-set-size (ewlc-client-xdg-surface client)
+                                  (- bwidth (* 2 border-width))
+                                  (- bheight (* 2 border-width)))
+       (log-message (format "            ewlc-resize: check3.1"))
+       )
+      (_
+       (log-message (format "            ewlc-resize: check4"))
+       (wlr-xwayland-surface-configure (ewlc-xwayland-surface client)
+                                       bx
+                                       by
+                                       (- bwidth (* 2 border-width))
+                                       (- bheight (* 2 border-width)))
+       )))
+  (log-message (format "            ewlc-resize: interact-p: '%s'" interact-p))
+  )
 
 (defun ewlc-get-independent-at-point (cursor)
   "Get the xwayland client a CURSOR point."
@@ -756,53 +978,82 @@ at the new size, then commit any movement that was prepared."
 
 (defun ewlc-surface-map-handler (client)
   "Called when the CLIENT surface is mapped, or ready to display on-screen."
+  (log-message (format "    ewlc-surface-map-handler: client: '%s'" client))
+  (log-message (format "    ewlc-surface-map-handler: client-type: '%s'" (ewlc-client-type client)))
   (if (equal (ewlc-client-type client) 'x11-unmanaged)
-      (push client (ewlc-independent-list client))
-    (push client (ewlc-client-list client))
-    (push client (ewlc-stack-list client))
-    (push client (ewlc-focus-list client))
-    (if (not (equal (ewlc-client-type client) 'xdg-shell))
-        (let ((geom (ewlc-client-geom client))
-              (surface (ewlc-client-surface-xwayland client))
-              (border-width (ewlc-border-width *ewlc*)))
-          (wlr-set-box-x geom (wlr-box-x surface))
-          (wlr-set-box-y geom (wlr-box-y surface))
-          (wlr-set-box-width geom (+ (* 2 border-width) (wlr-box-width surface)))
-          (wlr-set-box-height geom (+ (* 2 border-width) (wlr-box-height surface))))
-      (setf (ewlc-client-geom client) (wlr-xdg-surface-get-geometry
-                                       (ewlc-client-surface-xdg client)
-                                       (ewlc-client-geom client)))
-      (let ((geom (ewlc-client-geom client))
-            (border-width (ewlc-border-width *ewlc*)))
-        (wlr-set-box-width geom (+ (wlr-box-width geom) (* 2 border-width)))
-        (wlr-set-box-height geom (+ (wlr-box-height geom) (* 2 border-width))))))
-  (ewlc-apply-title client (ewlc-active-output *ewlc*)))
+      (push client (ewlc-independent-list *ewlc*))
+    (push client (ewlc-client-list *ewlc*))
+    (push client (ewlc-stack-client-list *ewlc*))
+    (push client (ewlc-focus-client-list *ewlc*)))
+  (log-message (format "    ewlc-surface-map-handler: check1"))
+  (pcase (ewlc-client-type client)
+    ;; TODO: what about geometry of unmanaged clients - do nothing?
+    ('x11-managed
+     (log-message (format "    ewlc-surface-map-handler: check2"))
+     (let ((geom (ewlc-client-geom client))
+           (surface (ewlc-client-surface-xwayland client))
+           (border-width (ewlc-border-width *ewlc*)))
+       (wlr-set-box-x geom (wlr-box-x surface))
+       (wlr-set-box-y geom (wlr-box-y surface))
+       (wlr-set-box-width geom (+ (* 2 border-width) (wlr-box-width surface)))
+       (wlr-set-box-height geom (+ (* 2 border-width) (wlr-box-height surface)))))
+    ('xdg-shell
+     (log-message (format "    ewlc-surface-map-handler: check3"))
+     (log-message (format "    ewlc-surface-map-handler: xdg-surface: '%s'" (ewlc-client-xdg-surface client)))
+     (log-message (format "    ewlc-surface-map-handler: geom: '%s'" (wlr-xdg-surface-get-geometry (ewlc-client-xdg-surface client))))
+     (let ((geom (wlr-xdg-surface-get-geometry (ewlc-client-xdg-surface client)))
+           (bw (ewlc-border-width *ewlc*)))
+       (log-message (format "    ewlc-surface-map-handler: check3.1"))
+       (log-message (format "    ewlc-surface-map-handler: width: '%s'" (wlr-box-width geom)))
+       (log-message (format "    ewlc-surface-map-handler: bw: '%s'" bw))
+       (wlr-set-box-width geom (+ (wlr-box-width geom) (* 2 bw)))
+       (log-message (format "    ewlc-surface-map-handler: check3.2"))
+       (wlr-set-box-height geom (+ (wlr-box-height geom) (* 2 bw)))
+       (log-message (format "    ewlc-surface-map-handler: check3.3"))
+       (setf (ewlc-client-geom client) geom))))
+  (log-message (format "    ewlc-surface-map-handler: check4"))
+  (log-message (format "    Is this correct that there is no active output?"))
+  (log-message (format "    +++++++++++++++++++++++++++++++++++++++++++++++"))
+  (log-message (format "    ewlc-surface-map-handler: output: '%s'" (ewlc-active-output *ewlc*)))
+  (ewlc-apply-title client (ewlc-active-output *ewlc*))
+  (log-message (format "    ewlc-new-xdg-shell-surface-handler: end"))
+  )
 
 
 (defun ewlc-new-xdg-shell-surface-handler (xdg-surface)
   "This event is raised when there is a new XDG-SURFACE.
 The event is from a client, either a toplevel (application window) or popup."
+  (log-message (format "    ewlc-new-xdg-shell-surface-handler: xdg-surface: '%s'" xdg-surface))
+  ;; TODO: return if not toplevel?
   (when (wlr-xdg-surface-role-toplevel xdg-surface)
-    (let* ((client-ptr (ewlc-make-xdg-surface-client-ptr xdg-surface))
+    (let* ((client-ptr (ewlc-make-xdg-surface-client-ptr (ewlc-ptr *ewlc*)))
            (client (make-ewlc-client :ptr client-ptr
                                      :xdg-surface xdg-surface
                                      :type 'xdg-shell
                                      :floating-p nil)))
       (wlr-xdg-toplevel-set-tiled (ewlc-client-xdg-surface client))
       (ewlc-set-xdg-surface-client-listeners (ewlc-client-ptr client)
-                                             (ewlc-client-xdg-surface client)))))
+                                             (ewlc-client-xdg-surface client))
+      ;; create client - but store it in unmapped list until it gets mapped.
+      (push client (ewlc-unmapped-client-list *ewlc*))))
+  (log-message (format "    ewlc-new-xdg-shell-surface-handler: client-list: '%s'"
+                       (ewlc-unmapped-client-list *ewlc*)))
+  (log-message (format "    ewlc-new-xdg-shell-surface-handler: end"))
+  )
 
 (defun ewlc-new-xwayland-surface-handler (xwayland-surface)
   "This event is raised when there is a new XWAYLAND-SURFACE."
-  (let* ((client-ptr (ewlc-make-xwayland-surface-client-ptr xwayland-surface))
+  (let* ((client-ptr (ewlc-make-xwayland-surface-client-ptr (ewlc-ptr *ewlc*)))
          (client (make-ewlc-client :ptr client-ptr
                                    :xwayland-surface xwayland-surface
+                                   :type (if (wlr-xwayland-surface-override-redirect)
+                                             'x11-unmanaged
+                                           'x11-managed)
                                    :floating-p nil)))
-    (setf (ewlc-client-type client) (if (wlr-xwayland-surface-override-redirect)
-                                        'x11-unmanaged
-                                      'x11-managed))
     (ewlc-set-xwayland-surface-client-listeners (ewlc-client-ptr client)
-                                                (ewlc-client-xwayland-surface client))))
+                                                (ewlc-client-xwayland-surface client))
+    ;; create client - but store it in unmapped list until it gets mapped.
+    (push client (ewlc-unmapped-client-list client))))
 
 
 (defun ewlc-surface-destroy-handler (client)
@@ -825,14 +1076,15 @@ The event is from a client, either a toplevel (application window) or popup."
 
 (defun ewlc-surface-unmap-handler (client)
   "Handle the unmap event for the CLIENT surface."
+  ;; TODO: also remove from the unmanaged client list.
   (setf (ewlc-client-list *ewlc*) (cl-remove client (ewlc-client-list *ewlc*) :test 'ewlc-client=))
   (unless (equal (ewlc-client-type client) 'x11-unmanaged)
     (let* ((output (ewlc-client-output client))
            (new-focused-client (ewlc-get-top-client-focus output)))
       (setf (ewlc-client-focus-list *ewlc*)
             (cl-remove client (ewlc-client-focus-list *ewlc*) :test 'ewlc-client=))
-      (setf (ewlc-client-stack-list *ewlc*)
-            (cl-remove client (ewlc-client-stack-list *ewlc*) :test 'ewlc-client=))
+      (setf (ewlc-stack-client-list *ewlc*)
+            (cl-remove client (ewlc-stack-client-list *ewlc*) :test 'ewlc-client=))
       (ewlc-arrange output)
       (ewlc-focus-client nil new-focused-client t))))
 
@@ -890,7 +1142,7 @@ The event is from a client, either a toplevel (application window) or popup."
   "The motion/resize of a client due to cursor miotion at TIME-MSEC."
   (when (ewlc-sloppy-focus *ewlc*)
     ;; Update active output as part of a client drag.
-    (setf (ewlc-active-output *ewlc*) (ewlc-get-output-at-point (ewlc-cursor *ewlc*))))
+    (setf (ewlc-active-output *ewlc*) (ewlc-get-ewlc-output-at-point (ewlc-cursor *ewlc*))))
   (let* ((grabbed-client (ewlc-grabbed-client *ewlc*))
          (grabbed-client-geom (ewlc-client-geom grabbed-client))
          (grabbed-client-x (wlr-box-x grabbed-client-geom))
@@ -997,7 +1249,7 @@ Usually occurs when the user copies something."
                                                "left_ptr"
                                                (ewlc-cursor *ewlc*))
          (setf (ewlc-cursor-mode *ewlc*) 'ewlc-cursor-normal)
-         (setf (ewlc-active-output *ewlc*) (ewlc-get-output-at-point (ewlc-cursor *ewlc*)))
+         (setf (ewlc-active-output *ewlc*) (ewlc-get-ewlc-output-at-point (ewlc-cursor *ewlc*)))
          (ewlc-set-output (ewlc-grabbed-client *ewlc*) (ewlc-active-output *ewlc*))
          (setq handled t)))
       (_
@@ -1016,7 +1268,7 @@ Usually occurs when the user copies something."
   (wlr-keyboard-set-repeat-info wlr-input-device
                                 (ewlc-repeat-rate *ewlc*)
                                 (ewlc-repeat-delay *ewlc*))
-  (let* ((keyboard-ptr (ewlc-make-keyboard-ptr wlr-input-device))
+  (let* ((keyboard-ptr (ewlc-make-keyboard-ptr (ewlc-ptr *ewlc*)))
          (keyboard (make-ewlc-keyboard :ptr keyboard-ptr
                                        :device wlr-input-device)))
     (ewlc-keyboard-set-listeners (ewlc-keyboard-ptr keyboard)
@@ -1024,13 +1276,17 @@ Usually occurs when the user copies something."
     (wlr-seat-set-keyboard (ewlc-seat *ewlc*) (ewlc-keyboard-device keyboard))
     (push keyboard (ewlc-keyboard-list *ewlc*))))
 
+(defun ewlc-keyboard= (keyboard-a keyboard-b)
+  "Compare KEYBOARD-A and KEYBOARD-B and return t if equal."
+  (ewlc-keyboard-ptr= (ewlc-keyboard-ptr keyboard-a) (ewlc-keyboard-ptr keyboard-b)))
+
 ;; keyboard event handlers ---------------------------------------------
 
 (defun ewlc-keyboard-destroy-handler (ewlc-keyboard)
   "Destroy EWLC-KEYBOARD."
   (setf (ewlc-keyboard-list *ewlc*) (cl-remove ewlc-keyboard
                                                (ewlc-keyboard-list *ewlc*)
-                                               :test 'keyboard=))
+                                               :test 'ewlc-keyboard=))
   (ewlc-free (ewlc-keyboard-ptr ewlc-keyboard)))
 
 (defun ewlc-keyboard-key-handler (ewlc-keyboard wlr-event-keyboard-key)
@@ -1225,19 +1481,28 @@ Usually occurs when the user copies something."
           t)
       nil)))
 
+(defun ewlc-loop ()
+  "The ewlc loop function."
+  (let ((count 0))
+    (while (and (ewlc-running-p *ewlc*) (< count 20))
+      (log-message (format "before: ewlc-handle-events"))
+      (ewlc-handle-events)
+      (log-message (format "before: ewlc-display-dispatch"))
+      (ewlc-display-dispatch)
+      (log-message (format "before: sleep-for"))
+      (sleep-for 0.1)
+      (log-message (format "end of while: count: '%d'" count))
+      (log-message (format "================================"))
+      ;; (sleep-for 0.01)
+      (cl-incf count))))
+
 (defun ewlc-start-compositor ()
   "Start the wayland compositor."
+  (create-log-file)
   (ewlc-start "alacritty")
-  (setq (ewlc-running-p *ewlc*) t)
-  (setq *ewlc-thread* (make-thread (lambda ()
-                                     (while (ewlc-running-p *ewlc*)
-                                       (ewlc-handle-events)
-                                       ;; FIXME: is this needed anymore?
-                                       ;; (ewlc-handle-keybindings (ewlc-server *ewlc*))
-                                       (ewlc-display-dispatch)
-                                       ;; or use: run-at-time ?
-                                       (sleep-for 0.01)))
-                                   "loop-thread")))
+  (setf (ewlc-running-p *ewlc*) t)
+  (setq *ewlc-thread* (make-thread #'ewlc-loop "loop-thread"))
+  )
 
 (provide 'ewlc-server)
 ;;; ewlc-server.el ends here

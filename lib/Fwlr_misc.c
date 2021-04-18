@@ -47,8 +47,8 @@ emacs_value Fwlr_export_dmabuf_manager_v1_create(emacs_env *env, ptrdiff_t nargs
     return env->make_user_ptr(env, NULL, mgr);
 }
 
-emacs_value Fwlr_screencopy_v1_create(emacs_env *env, ptrdiff_t nargs,
-                                      emacs_value args[], void *data)
+emacs_value Fwlr_screencopy_manager_v1_create(emacs_env *env, ptrdiff_t nargs,
+                                              emacs_value args[], void *data)
 {
     struct wl_display *display = env->get_user_ptr(env, args[0]);
     struct wlr_screencopy_manager_v1 *mgr = wlr_screencopy_manager_v1_create(display);
@@ -108,15 +108,6 @@ void deco_destroy_handler(struct wl_listener *listener, void *data)
     free(d);
 }
 
-emacs_value Fwlr_xdg_toplevel_decoration_v1_set_mode(emacs_env *env, ptrdiff_t nargs,
-                                                     emacs_value args[], void *data)
-{
-    struct wlr_xdg_toplevel_decoration_v1 *wlr_deco = env->get_user_ptr(env, args[0]);
-    wlr_xdg_toplevel_decoration_v1_set_mode(wlr_deco,
-                                            WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-    return Qt;
-}
-
 void init_wlr_misc(emacs_env *env)
 {
     emacs_value func;
@@ -130,8 +121,8 @@ void init_wlr_misc(emacs_env *env)
     func = env->make_function(env, 1, 1, Fwlr_export_dmabuf_manager_v1_create, "", NULL);
     bind_function(env, "wlr-export-dmabuf-manager-v1-create", func);
 
-    func = env->make_function(env, 1, 1, Fwlr_screencopy_v1_create, "", NULL);
-    bind_function(env, "wlr-screencopy-v1-create", func);
+    func = env->make_function(env, 1, 1, Fwlr_screencopy_manager_v1_create, "", NULL);
+    bind_function(env, "wlr-screencopy-manager-v1-create", func);
 
     func = env->make_function(env, 1, 1, Fwlr_data_device_manager_create, "", NULL);
     bind_function(env, "wlr-data-device-manager-create", func);
@@ -147,7 +138,4 @@ void init_wlr_misc(emacs_env *env)
 
     func = env->make_function(env, 2, 2, Fwlr_xdg_output_manager_v1_create, "", NULL);
     bind_function(env, "wlr-xdg-output-manager-v1-create", func);
-
-    func = env->make_function(env, 2, 2, Fwlr_xdg_toplevel_decoration_v1_set_mode, "", NULL);
-    bind_function(env, "wlr-xdg-output-toplevel-decoration-v1-set-mode", func);
 }

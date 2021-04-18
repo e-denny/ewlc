@@ -14,6 +14,16 @@
 #include <wlr/types/wlr_xdg_shell.h>
 
 
+emacs_value Fwlr_surface_equal(emacs_env *env, ptrdiff_t nargs,
+                               emacs_value args[], void *data)
+{
+    struct wlr_surface *surface_1 = env->get_user_ptr(env, args[0]);
+    struct wlr_surface *surface_2 = env->get_user_ptr(env, args[1]);
+    if (surface_1 == surface_2)
+        return Qt;
+    return Qnil;
+}
+
 emacs_value Fwlr_surface_send_frame_done(emacs_env *env, ptrdiff_t nargs,
                                          emacs_value args[], void *data)
 {
@@ -45,14 +55,14 @@ emacs_value Fwlr_surface_current_width(emacs_env *env, ptrdiff_t nargs,
                                        emacs_value args[], void *data)
 {
     struct wlr_surface *surface = env->get_user_ptr(env, args[0]);
-    return env->make_user_ptr(env, NULL, surface->current.width);
+    return env->make_integer(env, surface->current.width);
 }
 
 emacs_value Fwlr_surface_current_height(emacs_env *env, ptrdiff_t nargs,
                                         emacs_value args[], void *data)
 {
     struct wlr_surface *surface = env->get_user_ptr(env, args[0]);
-    return env->make_user_ptr(env, NULL, surface->current.height);
+    return env->make_integer(env, surface->current.height);
 }
 
 emacs_value Fwlr_surface_send_leave(emacs_env *env, ptrdiff_t nargs,
@@ -105,4 +115,7 @@ void init_wlr_surface(emacs_env *env)
 
     func = env->make_function(env, 2, 2, Fwlr_surface_for_each_surface_render, "", NULL);
     bind_function(env, "wlr-surface-for-each-surface-render", func);
+
+    func = env->make_function(env, 2, 2, Fwlr_surface_equal, "", NULL);
+    bind_function(env, "wlr-surface=", func);
 }
